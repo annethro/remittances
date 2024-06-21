@@ -1,0 +1,61 @@
+Recoding of missing values exported to Stata
+
+q5_3  Age of migrant
+
+Orig. Value    New Value      Label
+777            .A             n\a
+888            .B             don't know
+999            .C             missing
+
+
+q5_9c  Number of months migrant living in current location
+
+Orig. Value    New Value      Label
+777            .A             n\a
+999            .B             missing
+
+
+q5_13  Number of years of schooling completed before migration
+
+Orig. Value    New Value      Label
+777            .A             n\a
+999            .B             missing
+
+
+q5_19  Number of money transfers by migrant to HH in past 12months
+
+Orig. Value    New Value      Label
+777            .A             n\a
+999            .B             missing
+
+
+q5_21  Total amount of remittances sent by migrant to HH in past 12months
+
+Orig. Value    New Value      Label
+777            .A             n\a
+999            .B             missing
+
+
+q5_24  Total value of food/goods sent/brought by migrant to HH in past 12months
+
+Orig. Value    New Value      Label
+777            .A             n\a
+999            .B             missing
+
+
+q5_29  Number of money transfers by HH to migrant in past 12months
+
+Orig. Value    New Value      Label
+777            .A             n\a
+888            .B             dk
+999            .C             missing
+
+
+q5_31  Total amount of remittances sent by HH to migrant in past 12months
+
+Orig. Value    New Value      Label
+777            .A             n\a
+888            .B             dk
+999            .C             missing
+
+

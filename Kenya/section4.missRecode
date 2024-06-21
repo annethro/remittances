@@ -1,0 +1,10 @@
+Recoding of missing values exported to Stata
+
+q4_2_1  Number of years since the first account opening
+
+Orig. Value    New Value      Label
+777            .A             n\a
+888            .B             dk
+999            .C             missing
+
+
