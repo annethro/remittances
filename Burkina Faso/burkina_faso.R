@@ -86,16 +86,30 @@ bur1d$wall[bur1d$wall == "Other"] <- NA
 
 bur1d$hh_size[bur1d$hh_size == 44] <- NA # remove not-credible extreme outlier: 1 room with 44 people in it
 
+bur1d$migrant_num[is.na(bur1d$migrant_num)] <- 0 # *everyone* who is NA here is a zero; see above calculation of migrant number (only for households with one or more), then merging keeping all data -- thus the NAs
+
+bur1d <- droplevels(bur1d)
+
 # Tell R which variables (columns) to use in imputation for which variables (rows)
-
-predMat <- matrix(rep(0, ncol(bur1d)^2), ncol = ncol(bur1d), nrow = ncol(bur1d))
-
-fromthis <- ifelse(colnames(bur1d) %in% c("own_house", "radio", "tv", "fridge", "tele_mobile", "tele_land", "auto", "moto", "wall", "electric", "hh_size"), 0, 1) # Using these columns...
-predMat[colnames(bur1d) %in% c("own_land", "rm_cook", "water", "rm_count", "day"), ] <- fromthis #...to impute for these variables (day is the weirdest one, but assuming there's spatial autocorrelation to wealth, not terrible idea...)
 
 # Run imputation (and set seed for replicability; if you don't set a seed, R picks a random one each time and the imputed values move around)
 
-bur1e <- complete (mice (bur1d, method = "pmm", predictorMatrix = predMat, seed = 17000731)) # Seed chosen randomly on June 14 2024. PMM means predictive mean matching; DHS protocol uses mean assignment for the DHS wealth index. Complete returns the data set (saved as dat1) with missing values populated with predicted values.
+predMat_b <- matrix(rep(0, ncol(bur1d)^2), ncol = ncol(bur1d), nrow = ncol(bur1d))
+rownames(predMat_b) <- colnames(bur1d)
+colnames(predMat_b) <- colnames(bur1d)
+predMat_b <- data.frame(predMat_b)
+
+predMat_b[colnames(bur1d) %in% c("own_land", "rm_cook", "water", "rm_count", "day", "wall", "hh_size"), colnames(bur1d) %in% c("own_house", "radio", "tv", "fridge", "tele_mobile", "tele_land", "auto", "moto", "electric")] <- 1 # Variables in front of the comma need to be imputed. Variables after the comma are being used for imputation. "Each row [in the predictor matrix] corresponds to a variable block, i.e., a set of variables to be imputed. A value of 1 means that the column variable is used as a predictor for the target block (in the rows)." 
+
+#Note: day is the weirdest one, but assuming there's spatial autocorrelation to wealth, not terrible idea...
+
+# Tell mice to use predictive mean matching where it's imputing; all other slots in this vector are empty.
+these_b <- rep("", length(bur1d))
+these_b[which(colnames(bur1d) %in% row.names(predMat_b)[rowSums(predMat_b) > 0])] <-"pmm"
+
+# Run imputation (and set seed for replicability; if you don't set a seed, R picks a random one each time and the imputed values move around)
+
+bur1e <- complete(mice (bur1d, method = these_b, predictorMatrix = as.matrix(predMat_b), seed = 17000731, print = FALSE)) # Seed chosen randomly on June 14 2024. PMM means predictive mean matching; DHS protocol uses mean assignment for the DHS wealth index. Complete returns the data set (saved as dat1) with missing values populated with predicted values.
 
 bur1e <- droplevels(bur1e) # Dropping levels to improve behavior of factors
 
