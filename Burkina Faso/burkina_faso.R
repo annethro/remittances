@@ -277,12 +277,14 @@ bur1f <- bur1f %>%
   select(house, prov, vill, country, date, pres_size, migrant_num, wealth_index, remit) %>% # Simplify and reduce participant identifiability
   rename(loc_meso = prov, loc_micro = vill) # For merging
 
-loc <- read_csv("Burkina Faso/burkina locations_micro.csv") # Authors AP and HJ coded the lat/long of the provincial capital for each province; import those data to merge with data on household remittances
+loc <- read_csv("burkina locations_micro.csv") # Authors AP and HJ coded the lat/long of the provincial capital for each province; import those data to merge with data on household remittances
 
 loc <- mutate(loc, landmark = NULL, notes = NULL) # Remove AP's notes about how she got lat/long for each
 
 bur1g <- left_join(bur1f, loc, by = c("loc_micro" = "location")) # Merge province location with household data
 
+bur1g <- bur1g %>%
+  rename(district = loc_meso, census_tract = loc_micro, hh_size = pres_size)
 
 ##### Output #####
 

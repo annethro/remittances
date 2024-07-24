@@ -1,4 +1,4 @@
-house,loc_meso,loc_micro,country,date,pres_size,migrant_num,wealth_index,remit,lat,long
+house,district,census_tract,country,date,hh_size,migrant_num,wealth_index,remit,lat,long
 1,banwa(solenzo),bankouma,burkina_faso,2009-11-06,12,5,-0.8531262522782542,1,11.883200619057966,-4.266469868
 2,banwa(solenzo),bankouma,burkina_faso,2009-11-06,17,2,-0.8373508450960029,1,11.883200619057966,-4.266469868
 3,banwa(solenzo),bankouma,burkina_faso,2009-11-05,16,1,4.355272358019136,0,11.883200619057966,-4.266469868
