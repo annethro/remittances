@@ -51,7 +51,7 @@ b6a <- b6 %>%
 b1b <- b1a %>%
   group_by(men) %>%
   count(men) %>%
-  rename(pres_size = n)
+  rename(hh_size = n)
 
 ##### Process migrant roster into a count of household migrants #####
 
@@ -76,15 +76,6 @@ bur1d <- bur1d %>%
          own_house = s21, own_land = s311, wall = s23, rm_cook = s24, rm_count = s25, electric = s26, water = s27, radio = s316, tv = s317, fridge = s318, auto = s3117, moto = s3118, tele_mobile = s3113, tele_land = s3114, day = jint, month = mint, year = aint)
 
 
-##### Clean and recode #####
-
-### Recode wealth data ###
-
-bur1d$ppl_room <- bur1d$pres_size/bur1d$rm_count # number of people per room. Number of people per sleeping room is preferred; this is second choice when sleeping room data are not available. Produces 19 NAs as expected
-
-bur1d$ppl_room[bur1d$ppl_room == 44] <- NA # remove not-credible extreme outlier: 1 room with 44 people in it
-
-
 ### Pause! Impute NAs before processing further ###
 
 # Data show signs of being missing at random
@@ -93,12 +84,14 @@ bur1d$ppl_room[bur1d$ppl_room == 44] <- NA # remove not-credible extreme outlier
 
 bur1d$wall[bur1d$wall == "Other"] <- NA
 
+bur1d$hh_size[bur1d$hh_size == 44] <- NA # remove not-credible extreme outlier: 1 room with 44 people in it
+
 # Tell R which variables (columns) to use in imputation for which variables (rows)
 
 predMat <- matrix(rep(0, ncol(bur1d)^2), ncol = ncol(bur1d), nrow = ncol(bur1d))
 
-fromthis <- ifelse(colnames(bur1d) %in% c("own_house", "radio", "tv", "fridge", "tele_mobile", "tele_land", "auto", "moto", "wall", "electric"), 0, 1) # Using these columns...
-predMat[colnames(bur1d) %in% c("own_land", "rm_cook", "water", "ppl_room", "day"), ] <- fromthis #...to impute for these variables (day is the weirdest one, but assuming there's spatial autocorrelation to wealth, not terrible idea...)
+fromthis <- ifelse(colnames(bur1d) %in% c("own_house", "radio", "tv", "fridge", "tele_mobile", "tele_land", "auto", "moto", "wall", "electric", "hh_size"), 0, 1) # Using these columns...
+predMat[colnames(bur1d) %in% c("own_land", "rm_cook", "water", "rm_count", "day"), ] <- fromthis #...to impute for these variables (day is the weirdest one, but assuming there's spatial autocorrelation to wealth, not terrible idea...)
 
 # Run imputation (and set seed for replicability; if you don't set a seed, R picks a random one each time and the imputed values move around)
 
@@ -106,7 +99,10 @@ bur1e <- complete (mice (bur1d, method = "pmm", predictorMatrix = predMat, seed 
 
 bur1e <- droplevels(bur1e) # Dropping levels to improve behavior of factors
 
-### Back to recoding wealth data ###
+### Recode wealth data ###
+
+bur1e$ppl_room <- bur1e$hh_size/bur1e$rm_count # number of people per room. Number of people per sleeping room is preferred; this is second choice when sleeping room data are not available. Produces 19 NAs as expected
+
 
 bur1e$own_land <- case_when(
   bur1e$own_land == "yes" ~ 1,
@@ -274,7 +270,7 @@ bur1f <- left_join(bur1e, baggs, by = "house")
 bur1f$country <- "burkina_faso" # Country name for later merge
 
 bur1f <- bur1f %>%
-  select(house, prov, vill, country, date, pres_size, migrant_num, wealth_index, remit) %>% # Simplify and reduce participant identifiability
+  select(house, prov, vill, country, date, hh_size, migrant_num, wealth_index, remit) %>% # Simplify and reduce participant identifiability
   rename(loc_meso = prov, loc_micro = vill) # For merging
 
 loc <- read_csv("burkina locations_micro.csv") # Authors AP and HJ coded the lat/long of the provincial capital for each province; import those data to merge with data on household remittances
@@ -284,7 +280,7 @@ loc <- mutate(loc, landmark = NULL, notes = NULL) # Remove AP's notes about how 
 bur1g <- left_join(bur1f, loc, by = c("loc_micro" = "location")) # Merge province location with household data
 
 bur1g <- bur1g %>%
-  rename(district = loc_meso, census_tract = loc_micro, hh_size = pres_size)
+  rename(district = loc_meso, census_tract = loc_micro)
 
 ##### Output #####
 
