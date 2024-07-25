@@ -33,7 +33,7 @@ k5a <- k5 %>%
   select(qno, q5_19, q5_23) # These questions were posed to households with one or more household members that are currently elsewhere, whether in Kenya or abroad. 5_19: money transfers in last 12 mos. 5_23: 0/1 send or bring food to HH in last 12 months.
 
 k6a <- k6 %>%
-  select(qno, q6_6, q6_11) # For houses that received remittances or food from non-household migrants in the last 12 months; one row for each source of money or food. 6_6: number of money transfers. 6_11: number of food transfers.
+  select(qno) # For houses that received remittances or food from non-household migrants in the last 12 months; one row for each source of money or food.
 
 ### Some processing I did for e.g. Burkina is not needed for Kenya because researchers already did it, including counting number of household members.
 
@@ -200,7 +200,7 @@ ken1b$wealth_index <- pca_k$x[ ,1] # household-level score on first principal co
 
 ##### Now process individual-level data for money received #####
 
-##### For households that received remittances or food from one or more non-household member, just give them a 1 -- one row per household #####
+### For households that received remittances or food from one or more non-household member, just give them a 1 -- one row per household ###
 
 k6b <- k6a %>%
   distinct(qno) %>%
