@@ -41,10 +41,10 @@ b3a <- b3 %>%
   select(men, s311, s316, s317, s318, s3113, s3114, s3117, s3118) #These are details about the household itself, including owns agricultural land (311), radio (s316), TV (s317), fridge (s318), car or truck (s3117), motorcycle (s3118), phones (s3113, s3114) #Things in DHS that are not present here: no cooking fuel type, toilet, trash disposal, flood material, roof material, livestock, separate bedrooms.
   
 b5a <- b5 %>%
-  select(men, s56, s57, s519, s521) # These questions were posed to households with one or more household members that are currently elsewhere, whether in Burkina or abroad. 56: why live outside HH? 57: where live. 519: 0/1 send money to HH last 12 months. 522: 0/1 send or bring food to HH.
+  select(men, s519, s521) # These questions were posed to households with one or more household members that are currently elsewhere, whether in Burkina or abroad. 56: why live outside HH? 57: where live. 519: 0/1 send money to HH last 12 months. 522: 0/1 send or bring food to HH.
 
 b6a <- b6 %>%
-  select(men, s62, s66, s610) # These are the households that have social network connections from outside their household that are currently elsewhere, whether in Burkina or abroad. 62: where live? 66: pres/abs of money, 610: 0/1 receive goods.
+  select(men) # For houses that received remittances or food from non-household migrants in the last 12 months; all households on the list receive a remittance from a non-household member. 66: pres/abs of money, 610: 0/1 receive goods.
 
 ##### Process household roster into count of individuals #####
 
@@ -229,13 +229,19 @@ bur1e$date <- dmy(bur1e$long_date) #"failed to parse" is as expected - they're m
 
 ##### Now process individual-level data for money received #####
 
-b56 <- bind_rows(b5a, b6a) # Combine rows from households with HH members elsewhere and HHs with social-network members elsewhere
+### For households that received remittances or food from one or more non-household member, just give them a 1 -- one row per household ###
+
+b6b <- b6a %>%
+  distinct(men) %>%
+  mutate(nonhh_remit = 1)
+
+b56 <- bind_rows(b5a, b6b) # Combine rows from households with HH members elsewhere and HHs with social-network members elsewhere
 
 
 b56 <- b56 %>%
   group_by(men) %>% #Group by household
   rename(house = men,  
-         curr_why = s56, curr_where = s57, curr_money = s519, curr_goods = s521, nothh_where = s62, nothh_money = s66, nothh_goods = s610) # curr variables are for current HH members who are elsewhere; nothh variables are for non-HH members who are elsewhere
+        curr_money = s519, curr_goods = s521) # curr variables are for current HH members who are elsewhere; nothh variables are for non-HH members who are elsewhere
 
 
 ### Clean and recode ###
@@ -254,23 +260,10 @@ b56$curr_goods <- case_when(
   b56$curr_goods == 0 ~ NA
 )
 
-b56$nothh_money <- case_when(
-  b56$nothh_money == "yes" ~ 1,
-  b56$nothh_money == "no" ~ 0
-)
-
-b56$nothh_goods <- case_when(
-  b56$nothh_goods == "yes" ~ 1,
-  b56$nothh_goods == "no" ~ 0
-)
-
 ##### Make binary for whether any remittances received #####
 # This is combining across source (same-HH, non-HH) and type (money or goods)
 
-b56 <- b56 %>%
-  select(house, curr_money, curr_goods, nothh_money, nothh_goods)
-
-b56$cts <- rowSums(b56[ , 2:5], na.rm = T) # Since these are all binary, it's okay to sum
+b56$cts <- rowSums(b56[ , 2:4], na.rm = T) # Since these are all binary, it's okay to sum
 
 baggs <- aggregate(b56$cts, by = list(b56$house),function(x){ifelse(sum (x) > 0, 1, 0)}) # Record to binary
 
