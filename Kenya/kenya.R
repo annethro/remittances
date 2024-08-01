@@ -25,15 +25,16 @@ k6 <- as_tibble(read.dta("section6.dta"))
 ##### Subset #####
 
 k0a <- k0 %>%
-  select(qno, district, cunit, hhmnum, date1, q2_3, q2_4, q2_5a, q2_6, q2_7, q3_1_1, q3_1_3, q3_1_5, q3_1_6, q3_1_7, q3_1_8, q3_1_9, q3_1_12, q3_1_13, q3_1_14, q3_1_15, q3_1_17, q3_1_18) %>% #Select household, district, census unit, walls (2_3), separate cooking room (2_4), total count of dining sleeping and living rooms in main house (2_5a), electricity (2_6), water source (2_7), ag land (3_1_1), own house (3_1_3), q3_1_5 (tuk tuk (vehicle)), q3_1_6 (radio), q3_1_7 (tv), q3_1_8 (fridge), q3_1_9 (air conditioner), q3_1_12 (computer), q3_1_13 (mobile), q3_1_14 (other phone), q3_1_15 (bicycle), q3_1_17 (car), q3_1_18 (motorcycle). #Things in DHS that are not present here: no cooking fuel type, toilet, trash disposal, floor material, roof material, livestock, separate bedrooms. Considered tractor, bus, lorry, air conditioner but few households had one; also considered radio and telephones, but almost all houses had them and it reduced the variance loading on the first principal component. Bicycle also didn't help with wealth estimates; notable increase in PC1 variance summarized when this was removed. Low variability when need higher to make a good index of wealth.
-  mutate_at(vars(district, cunit), ~ str_to_lower(.)) %>%
-  distinct(qno, .keep_all = T) # Made it unique by household even though Kenyan data should already be unique by household, just because that's what I did with the other countries.
+  select(qno, district, cunit, hhmnum, date1, q2_3, q2_4, q2_5a, q2_6, q2_7, q3_1_1, q3_1_3, q3_1_5, q3_1_6, q3_1_7, q3_1_8, q3_1_9, q3_1_12, q3_1_13, q3_1_14, q3_1_15, q3_1_17, q3_1_18) %>% #Select household, district, census unit, walls (2_3), separate cooking room (2_4), total count of dining sleeping and living rooms in main house (2_5a), electricity (2_6), water source (2_7), ag land (3_1_1), own house (3_1_3), q3_1_5 (tuk tuk (vehicle)), q3_1_6 (radio), q3_1_7 (tv), q3_1_8 (fridge), q3_1_9 (air conditioner), q3_1_12 (computer), q3_1_13 (mobile), q3_1_14 (other phone), q3_1_15 (bicycle), q3_1_17 (car), q3_1_18 (motorcycle). 
+  #Things in DHS that are not present here: no cooking fuel type, toilet, trash disposal, floor material, roof material, livestock, separate bedrooms. 
+
+  mutate_at(vars(district, cunit), ~ str_to_lower(.))
 
 k5a <- k5 %>%
   select(qno, q5_19, q5_23) # These questions were posed to households with one or more household members that are currently elsewhere, whether in Kenya or abroad. 5_19: money transfers in last 12 mos. 5_23: 0/1 send or bring food to HH in last 12 months.
 
 k6a <- k6 %>%
-  select(qno) # For houses that received remittances or food from non-household migrants in the last 12 months; one row for each source of money or food.
+  select(qno, q6_6, q6_11) # Some houses didn't receive either food or money; need to exclude those.
 
 ### Some processing I did for e.g. Burkina is not needed for Kenya because researchers already did it, including counting number of household members.
 
@@ -60,8 +61,6 @@ ken1a <- ken1a %>%
 
 # Tidy up a smidge to make number codes factors, remove unused levels, etc.
 
-ken1a <- droplevels(ken1a)
-
 ken1a$wall[ken1a$wall == "other (specify"] <- NA # so few people have other for walls, recoding to "NA" and then imputing (9 out of 1942)
 
 ken1a$rm_cook[ken1a$rm_cook == 3] <- NA # this is a blank level in the WB database and only has three observations, so recoding to NA and imputing
@@ -70,6 +69,8 @@ ken1a$migrant_num[is.na(ken1a$migrant_num)] <- 0 # *everyone* who is NA here is 
 
 ken1a <- ken1a[!is.na(ken1a$tuk_tuk), ] # 13 houses are missing the owned items entirely, leaving few variables on which I could impute, even though evidence suggests they're missing at random (e.g., with respect to interview date and location). Ultimately I opted to remove them, rather than using four variables to impute 13 variables (for 13 households).
 
+ken1a <- droplevels(ken1a)
+
 # Tell R which variables (columns) to use in imputation for which variables (rows)
 
 predMat_k <- matrix(rep(0, ncol(ken1a)^2), ncol = ncol(ken1a), nrow = ncol(ken1a))
@@ -77,7 +78,7 @@ rownames(predMat_k) <- colnames(ken1a)
 colnames(predMat_k) <- colnames(ken1a)
 predMat_k <- data.frame(predMat_k)
 
-predMat_k[colnames(predMat_k) %in% c("hh_size", "wall", "rm_cook", "rm_count", "electric", "water", "moto"), colnames(predMat) %in% c("own_land", "own_house", "tuk_tuk", "radio", "tv", "fridge","air_cond", "computer", "tele_mobile", "tele_land", "bicycle", "auto")] <- 1 # Variables in front of the comma need to be imputed. Variables after the comma are being used for imputation. "Each row [in the predictor matrix] corresponds to a variable block, i.e., a set of variables to be imputed. A value of 1 means that the column variable is used as a predictor for the target block (in the rows)." 
+predMat_k[colnames(predMat_k) %in% c("hh_size", "wall", "rm_cook", "rm_count", "electric", "water", "moto"), colnames(predMat_k) %in% c("own_land", "own_house", "tuk_tuk", "radio", "tv", "fridge","air_cond", "computer", "tele_mobile", "tele_land", "bicycle", "auto")] <- 1 # Variables in front of the comma need to be imputed. Variables after the comma are being used for imputation. "Each row [in the predictor matrix] corresponds to a variable block, i.e., a set of variables to be imputed. A value of 1 means that the column variable is used as a predictor for the target block (in the rows)." 
 
 # Tell mice to use predictive mean matching where it's imputing; all other slots in this vector are empty.
 these_k <- rep("", length(ken1a))
@@ -192,6 +193,7 @@ pca_k <- ken1b %>%
   as_tibble() %>%
 select(own_land, own_house, starts_with("water_"), starts_with("wall_"), ppl_room, rm_cook, tv, fridge, vehicle, rm_cook, electric, computer) %>%
   prcomp(scale = TRUE) # scale scales to 0-1 since not all variables are binary. using singular value decomposition because I have a non-symmetric matrix
+#Considered tractor, bus, lorry, air conditioner but few households had one; also considered radio and telephones, but almost all houses had them and it reduced the variance loading on the first principal component. Bicycle also didn't help with wealth estimates; notable increase in PC1 variance summarized when this was removed. Low variability when need higher to make a good index of wealth.
 
 # DHS protocol is to extract first component loading for each household
 
@@ -203,8 +205,10 @@ ken1b$wealth_index <- pca_k$x[ ,1] # household-level score on first principal co
 ### For households that received remittances or food from one or more non-household member, just give them a 1 -- one row per household ###
 
 k6b <- k6a %>%
-  distinct(qno) %>%
-  mutate(nonhh_remit = 1)
+  group_by(qno) %>% # need to group first to use keep in mutate
+  mutate(nonhh_remit = if_else(q6_6 > 0 | q6_11 == "yes", 1, 0), .keep = "none") %>%
+  filter(nonhh_remit == 1, na.rm = TRUE) %>% # remove NAs
+  distinct() # remove duplicate lines for households
 
 
 k56 <- bind_rows(k5a, k6b) # Combine rows from households with HH members elsewhere and HHs with social-network members elsewhere
