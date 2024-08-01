@@ -28,8 +28,7 @@ b6 <- as_tibble(read.dta("f6iw.dta"))
 
 b0a <- b0 %>%
   select(men, prov, vill, jint, mint, aint) %>% #Select household, province, and village.
-  mutate_at(vars(prov, vill), ~ str_to_lower(.)) %>% #Make all names lowercase for ease of merging.
-  distinct(men, .keep_all = T) #One row per household in case duplicates. There are none for Burkina.
+  mutate_at(vars(prov, vill), ~ str_to_lower(.)) #Make all names lowercase for ease of merging.
 
 b1a <- b1 %>%
   select(men, id) #List of everyone who *currently* lives in the house. (Based on wording in English, probably can't guarantee that people got this currently bit -- unclear if migrants are counted.)
@@ -44,7 +43,7 @@ b5a <- b5 %>%
   select(men, s519, s521) # These questions were posed to households with one or more household members that are currently elsewhere, whether in Burkina or abroad. 56: why live outside HH? 57: where live. 519: 0/1 send money to HH last 12 months. 522: 0/1 send or bring food to HH.
 
 b6a <- b6 %>%
-  select(men) # For houses that received remittances or food from non-household migrants in the last 12 months; all households on the list receive a remittance from a non-household member. 66: pres/abs of money, 610: 0/1 receive goods.
+  select(men, s66, s610) # Some houses didn't receive either food or money; need to exclude those.
 
 ##### Process household roster into count of individuals #####
 
@@ -99,7 +98,7 @@ rownames(predMat_b) <- colnames(bur1d)
 colnames(predMat_b) <- colnames(bur1d)
 predMat_b <- data.frame(predMat_b)
 
-predMat_b[colnames(bur1d) %in% c("own_land", "rm_cook", "water", "rm_count", "day", "wall", "hh_size"), colnames(bur1d) %in% c("own_house", "radio", "tv", "fridge", "tele_mobile", "tele_land", "auto", "moto", "electric")] <- 1 # Variables in front of the comma need to be imputed. Variables after the comma are being used for imputation. "Each row [in the predictor matrix] corresponds to a variable block, i.e., a set of variables to be imputed. A value of 1 means that the column variable is used as a predictor for the target block (in the rows)." 
+predMat_b[colnames(predMat_b) %in% c("own_land", "rm_cook", "water", "rm_count", "day", "wall", "hh_size"), colnames(predMat_b) %in% c("own_house", "radio", "tv", "fridge", "tele_mobile", "tele_land", "auto", "moto", "electric")] <- 1 # Variables in front of the comma need to be imputed. Variables after the comma are being used for imputation. "Each row [in the predictor matrix] corresponds to a variable block, i.e., a set of variables to be imputed. A value of 1 means that the column variable is used as a predictor for the target block (in the rows)." 
 
 #Note: day is the weirdest one, but assuming there's spatial autocorrelation to wealth, not terrible idea...
 
@@ -232,8 +231,10 @@ bur1e$date <- dmy(bur1e$long_date) #"failed to parse" is as expected - they're m
 ### For households that received remittances or food from one or more non-household member, just give them a 1 -- one row per household ###
 
 b6b <- b6a %>%
-  distinct(men) %>%
-  mutate(nonhh_remit = 1)
+  group_by(men) %>% # need to group first to use keep in mutate
+  mutate(nonhh_remit = if_else(s66 == "yes" | s610 == "yes", 1, 0), .keep = "none") %>%
+  filter(nonhh_remit == 1, na.rm = TRUE) %>% # remove NAs
+  distinct() # remove duplicate lines for households
 
 b56 <- bind_rows(b5a, b6b) # Combine rows from households with HH members elsewhere and HHs with social-network members elsewhere
 
