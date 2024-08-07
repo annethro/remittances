@@ -208,14 +208,15 @@ bur1e$electric <- case_when(
 
 pca1 <- bur1e %>%
   as_tibble() %>%
-select(own_land, own_house, starts_with("water_"), starts_with("wall_"), ppl_room, radio, tv, fridge, tele, auto, moto, rm_cook, electric) %>%
+select(own_land, own_house, starts_with("water_"), starts_with("wall_"), ppl_room, tv, fridge, auto, moto, rm_cook, electric) %>%
   prcomp(scale = TRUE) # scale scales to 0-1 since not all variables are binary. using singular value decomposition because I have a non-symmetric matrix
+# removed variables with low loadings on PC1 as specified by DHS protocol, in this order: radio, tele
 
 
 
 # DHS protocol is to extract first component loading for each household
 
-bur1e$wealth_index <- pca1$x[ ,1] # household-level score on first principal component. Explains 32% of the variance in wealth.
+bur1e$wealth_index <- pca1$x[ ,1] # household-level score on first principal component. Explains 36% of the variance in wealth.
 
 
 ### Get usable interview date ###
