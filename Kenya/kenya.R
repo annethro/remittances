@@ -185,15 +185,22 @@ ken1b$electric <- case_when(
   ken1b$electric == "no" ~ 0
 )
 
+ken1b$radio <- case_when(
+  ken1b$radio == "yes" ~ 1,
+  ken1b$radio == "no" ~ 0
+)
+
 ##### PCA for wealth #####
 
 #This is standard practice for the DHS wealth index
 
 pca_k <- ken1b %>%
   as_tibble() %>%
-select(own_land, own_house, starts_with("water_"), starts_with("wall_"), ppl_room, rm_cook, tv, fridge, vehicle, rm_cook, electric, computer) %>%
+select(own_land, own_house, starts_with("water_"), starts_with("wall_"), ppl_room, rm_cook, tv, fridge, vehicle, electric, computer, tele) %>%
   prcomp(scale = TRUE) # scale scales to 0-1 since not all variables are binary. using singular value decomposition because I have a non-symmetric matrix
-#Considered tractor, bus, lorry, air conditioner but few households had one; also considered radio and telephones, but almost all houses had them and it reduced the variance loading on the first principal component. Bicycle also didn't help with wealth estimates; notable increase in PC1 variance summarized when this was removed. Low variability when need higher to make a good index of wealth.
+#Considered tractor, bus, lorry but few households had one.
+#Items with low loading on PC1 that were removed, in order of removal: bicycle, radio, air_cond.
+#Got to 30% loading with these removals but couldn't remove more because standard DHS.
 
 # DHS protocol is to extract first component loading for each household
 
