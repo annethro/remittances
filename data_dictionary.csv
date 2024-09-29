@@ -1,0 +1,20 @@
+﻿Variable,Range-Levels,Description
+house,1 to 2106,Household number
+district,Various,"One administrative level about census tract in each country - for example, county in Kenya and state in Nigeria"
+census_tract,Various,"Enumeration area for the survey - census tract in some countries, neighborhood or village in others."
+country,Various,Country name
+date,2009-10-12 to 2009-12-23,Date on which interview took place in year-month-day format
+hh_size,1 to 36,The number of people currently living in the household at the time of interview
+migrant_num,1 to 20,The number of household members not living in the household at the time of the interview
+wealth_index, -5.06 to 12.09,"The loading of the household on the first principal component from a principal component analysis of items that are local indicators of wealth; for further details, see Rutstein (2015)"
+remit,"0, 1",Whether money or food were received from household or nonhousehold migrants in  the last 12 months
+lat, -4.06 to 13.91,"Latitute of census tract, to the nearest landmark; located with Google Maps, Map Carta, ChatGPT, or a combination"
+long, -5.22 to 40.44,"Longitude of census tract, to the nearest landmark; located with Google Maps, Map Carta, ChatGPT, or a combination"
+lat_regrid, -4.05 to 13.90,Latitude of the CHIRPS grid point nearest the census tract
+long_regrid, -5.20 to 40.45,Longitude of the CHIRPS grid point nearest the census tract
+intensity, -1.89 to 0,"First, calculate mean deviation from the 10th percentile during a single drought for a given census tract; then take the mean of those mean deviations over 2004-2009"
+magnitude, -2.30 to 0,"First, calculate maximum deviation from the 10th percentile during a single drought for a given census tract; then take the mean of those maximum deviations over 2004-2009"
+duration,0 to 4,"For each census tract, calculate the average length in months of a single drought  2004-2009"
+frequency, 0 to 1.5,The frequency of drought onsets across the 2004-2009 period
+severity, -7.13 to 0,"First, calculate the cumulative deviation from the 10th percentile during a single drought for a given census tract; then take the mean of those cumulative deviations over 2004-2009"
+dispersion, -0.88 to 0.67,Variance in drought frequency divided by mean drought frequency across the 2004-2009 period
