@@ -70,29 +70,28 @@ dat <- dat %>%
 # NAs are meaningful for remit
 dat <- dat %>% mutate(remit = replace_na(remit, 0))
 
+##### Center and standardize variables #####
+
+dat <- dat %>%
+  mutate(date_s = scale(interview_date), lat_s = scale(lat), long_s = scale(long), hh_size_s = scale(hh_size), migrant_num_s = scale(migrant_num), wealth_index_s = scale(wealth_index), frequency_s = scale(frequency), severity_s = scale(severity), dispersion_s = scale(dispersion))
+
 # Correlation structure between environmental variables of interest. By definition, these should be correlated a bit - and we don't see problematically high levels of correlation. Per best practices from Bayesian approaches (see discussions referenced in the URLs that follow), we just set the prior for each environmental variable to a normal distribution with constant variance to move the model away from a ridge in the posterior between two or more environmental variables.
 # https://statmodeling.stat.columbia.edu/2019/07/07/collinearity-in-bayesian-models/; https://mc-stan.org/docs/stan-users-guide/problematic-posteriors.html
 
-cor.mat <- cor(dat[, c("dispersion", "frequency", "severity")])
+cor.mat <- cor(dat[, c("dispersion_s", "frequency_s", "severity_s")])
 ggcorrplot(cor.mat)
 
 ##### Model #####
 
-mod1 <- brm(remit ~ dispersion + frequency + severity + wealth_index + hh_size + migrant_num + (1 | interview_date + census_tract + country), 
+mod1 <- brm(remit ~ dispersion_s + frequency_s + severity_s + wealth_index_s + hh_size_s + migrant_num_s + (1 | date_s + census_tract + country), 
           data = dat,
           family = bernoulli,
           control = list(adapt_delta = 0.99),
-#          prior =
- #           prior(normal(-1, 5), class = "Intercept") +
-#            prior(normal(0, 2.5), coef = "dispersion") +
-#            prior(normal(0, 2.5), coef = "frequency") +
-#            prior(normal(2.5, 2.5), coef = "severity") +
-#            prior(normal(0, 2.5), coef = "wealth_index") +
-#            prior(normal(0, 2.5), coef = "hh_size") +
-#            prior(normal(0, 2.5), coef = "migrant_num") +
-            prior(cauchy(0,2), class = "sd")
+          prior(cauchy(0,2), class = "sd")
           ) # Not included yet: NDVI, distance to center, country, spatial extent; data from three additional countries.
+
+# Some mild (but not concerning) issues with effective sample size in interview date and country, driven by the fact that we don't have date for Nigeria and there are only three countries. This will be less of an issue with the full model.
 
 # Convert to odds ratios
 
-exp(cbind(Odds_Ratio = fixef(mod1)[,1], Lower = fixef(mod1)[,3], Upper = fixef(mod1)[,4]))
+exp(cbind(Odds_Ratio = fixef(mod1)[,1], Lower = fixef(mod1, probs = c(.05, .95))[,3], Upper = fixef(mod1, probs = c(.5, .95))[,4]))
