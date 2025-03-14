@@ -1,0 +1,3 @@
+Before running our models (see the Models folder), we processed environmental data. To reproduce our approach to processing environmental data, use the Python code in this folder paired with the following downloaded data:
+
+SPEI data both for the globe, and subset for Africa, can be directly downloaded here: https://catalogue.ceda.ac.uk/uuid/ac43da11867243a1bb414e1637802dec/. Monthly NDVI averages for Africa are available at https://github.com/annethro/remittances, and the original daily NDVI files can be downloaded from: https://www.ncei.noaa.gov/metadata/geoportal/rest/metadata/item/gov.noaa.ncdc:C01558/html
