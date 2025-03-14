@@ -1,0 +1,1 @@
+Before we ran our models (see the Models folder), we processed the social data. To reproduce our approach to processing the social data, download data for Burkina Faso, Kenya, Nigeria, Senegal, South Africa, and Uganda from this link: https://github.com/annethro/remittances/tree/main/SPEI%20CSVs. Then use our provided code to process it.
