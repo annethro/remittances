@@ -1,4 +1,4 @@
-# Download data files first from: https://github.com/annethro/remittances/tree/main/SPEI%20CSVs
+# Download data files first from: https://github.com/annethro/remittances/
 
 lapply(c("tidyverse", "geosphere", "ggcorrplot", "rnaturalearth", "sf", "ggpubr", "brms", "bayesplot", "officer", "flextable", "plotly", "webshot"), library, character.only = TRUE)
 
@@ -128,7 +128,7 @@ dat <- dat %>%
 # Correlation structure between environmental variables of interest. By definition, these should be correlated a bit - and we don't see problematically high levels of correlation. Per best practices from Bayesian approaches (see discussions referenced in the URLs that follow), we just set the prior for each environmental variable to a normal distribution with constant variance to move the model away from a ridge in the posterior between two or more environmental variables.
 # https://statmodeling.stat.columbia.edu/2019/07/07/collinearity-in-bayesian-models/; https://mc-stan.org/docs/stan-users-guide/problematic-posteriors.html
 
-cor.mat <- cor(dat[, c("dispersion_s", "frequency_s", "severity_s", "area_km_s", "NDVI_mean_s", "wealth_index_s", "pop_center_s", "hh_size_s", "migrant_num_s")], use = "complete.obs")
+cor.mat <- cor(dat[, c("NDVI_mean_s", "pop_center_s","migrant_num_s", "hh_size_s", "wealth_index_s", "area_km_s", "dispersion_s", "frequency_s", "severity_s")], use = "complete.obs")
 ggcorrplot(cor.mat)
 
 # Highest correlation (from me checking various things) is actually NDVI_mean with area_km, but 50% so not too worried with the avoidance of ridges per above
@@ -328,7 +328,7 @@ ggarrange(freq_plot, auto_plot, sev_plot, spa_plot,
 ############# MAIN MODEL ################
 
 mod1 <- brm(remit ~ 
-              dispersion_s + frequency_s + severity_s + area_km_s + # Environmental predictors of interest
+              severity_s + frequency_s + dispersion_s + area_km_s + # Environmental predictors of interest
               wealth_index_s + hh_size_s + migrant_num_s + pop_center_s + NDVI_mean_s + # Controls
               (1 | date_s + census_tract + country), 
           data = dat,
@@ -344,7 +344,7 @@ mod1 <- brm(remit ~
 
 ests_mod1 <- data.frame(exp(cbind(Odds_Ratio = fixef(mod1)[,1], Lower = fixef(mod1, probs = c(.05, .95))[,3], Upper = fixef(mod1, probs = c(.5, .95))[,4])))
 
-ests_mod1$parameters <- c("Intercept", "Dispersion", "Frequency", "Severity", "Spatial extent", "Wealth", "Household size", "Migrant number", "Dist. to pop. center", "Mean NDVI")
+ests_mod1$parameters <- c("Intercept", "Severity", "Frequency", "Dispersion", "Spatial extent", "Wealth", "Household size", "Migrant number", "Dist. to pop. center", "Mean NDVI")
 
 ##### Posterior checks #####
 
