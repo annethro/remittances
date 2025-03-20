@@ -746,6 +746,8 @@ mod_12 <- brm(remit ~
               )
 )
 
+bayes_R2(mod_12)
+
 posterior_12 <- as.array(mod_12)
 
 color_scheme_set("pink")
@@ -790,6 +792,7 @@ svi_sev <- brm(remit ~
             )
 )
 
+bayes_R2(svi_sev)
 
 posterior_svi <- as.array(svi_sev)
 
