@@ -247,7 +247,7 @@ print(doc, target = "Descriptives_Country.docx")
 
 # As we'll see later, there's some action for households experienced high severity, high frequency, and large spatial extent droughts -- let's make sure there's good data coverage in that part of the state space and it's not being driven by few observations (spoiler: looks like it is)
 
-plot_ly(dat, 
+descrip_3d <- plot_ly(dat, 
         x = ~severity_s, 
         y = ~frequency_s, 
         z = ~area_km_s, 
@@ -268,7 +268,7 @@ plot_ly(dat,
   )
  )
 
-saveWidget(fig, "3D_Descriptive_Plot.html", selfcontained = TRUE)
+saveWidget(descrip_3d, "3D_Descriptive_Plot.html", selfcontained = TRUE)
 
 ##### Heat map figures #####
 
@@ -372,7 +372,7 @@ ests_mod1 <- data.frame(exp(cbind(Odds_Ratio = fixef(mod1)[,1], Lower = fixef(mo
 
 ests_mod1$parameters <- c("Intercept", "Severity", "Frequency", "Dispersion", "Spatial extent", "Wealth", "Household size", "Migrant number", "Dist. to pop. center", "Mean NDVI")
 
-##### Posterior checks #####
+### Posterior checks ###
 
 # For variables moderately correlated, check for signs of ridges
 
@@ -384,7 +384,7 @@ mcmc_pairs(posterior, pars = c("b_NDVI_mean_s", "b_area_km_s", "b_frequency_s", 
 
 bayes_R2(mod1)
 
-##### Caterpillar plot #####
+### Caterpillar plot ###
 
 ests_mod1 <- ests_mod1 %>%
   mutate(parameters = factor(parameters, levels = c("Mean NDVI", "Dist. to pop. center", "Migrant number", "Household size", "Wealth", "Spatial extent", "Dispersion", "Frequency", "Severity", "Intercept")))
@@ -401,7 +401,62 @@ ggplot(ests_mod1, aes(x = parameters, y = Odds_Ratio)) +
   ) +
   labs(y = "Odds Ratio with 90% Credible Interval")
 
+
+
+
+
 ############# EXPLORATORY ANALYSES ################
+
+##### Check main model fit robustness to exclusion of extreme values #####
+
+# High values of for spatial extent...
+
+dat_noext <- dat[dat$area_km_s <= 3,] # 371 observations. Only have one frequency (medium low; -1.08251295545341), one dispersion (0.2), though a range of severities. 2/3 remit, all are from Nigeria
+
+# High severity...
+
+dat_noext <- dat_noext[dat_noext$severity_s <= 3,] # 9 observations. All identical on spatial extent, frequency, severity, and dispersion; 2 remit; all uganda. 
+
+mod1_noext <- brm(remit ~ 
+              severity_s + frequency_s + dispersion_s + area_km_s + # Environmental predictors of interest
+              wealth_index_s + hh_size_s + migrant_num_s + pop_center_s + NDVI_mean_s + # Controls
+              (1 | date_s + census_tract + country), 
+            data = dat_noext,
+            family = bernoulli,
+            control = list(adapt_delta = 0.99),
+            prior = c(prior(cauchy(0, 2), class = "sd"),
+                      prior(normal(0, 1), class = "b")
+            )
+)
+
+ests_mod1_noext <- data.frame(exp(cbind(Odds_Ratio = fixef(mod1_noext)[,1], Lower = fixef(mod1_noext, probs = c(.05, .95))[,3], Upper = fixef(mod1_noext, probs = c(.5, .95))[,4])))
+
+bayes_R2(mod1_noext) #0.334
+
+posterior <- as.array(mod1_noext)
+
+color_scheme_set("pink")
+mcmc_pairs(posterior, pars = c("b_NDVI_mean_s", "b_area_km_s", "b_frequency_s", "b_dispersion_s", "b_severity_s"),
+           off_diag_args = list(size = 1.5))
+
+### Caterpillar plot ###
+
+ests_mod1_noext$parameters <- c("Intercept", "Severity", "Frequency", "Dispersion", "Spatial extent", "Wealth", "Household size", "Migrant number", "Dist. to pop. center", "Mean NDVI")
+
+ests_mod1_noext <- ests_mod1_noext %>%
+  mutate(parameters = factor(parameters, levels = c("Mean NDVI", "Dist. to pop. center", "Migrant number", "Household size", "Wealth", "Spatial extent", "Dispersion", "Frequency", "Severity", "Intercept")))
+
+ggplot(ests_mod1_noext, aes(x = parameters, y = Odds_Ratio)) +
+  geom_pointrange(aes(ymin = Lower, ymax = Upper), color = "blue") +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red") +
+  coord_flip() +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 15, face = "bold"),
+    axis.title.y = element_blank(),
+    axis.title.x = element_text(size = 15, face = "bold"),
+  ) +
+  labs(y = "Odds Ratio with 90% Credible Interval")
 
 ##### Time window #####
 
@@ -506,6 +561,8 @@ ggplot(ests_mod10, aes(x = parameters, y = Odds_Ratio)) +
   ) +
   labs(y = "Odds Ratio with 90% Credible Interval")
 
+bayes_R2(mod_10)
+
 
 ##### Thresholds #####
 
@@ -581,6 +638,8 @@ mod_15 <- brm(remit ~
                         prior(normal(0, 1), class = "b")
               )
 )
+
+bayes_R2(mod_15)
 
 posterior_15 <- as.array(mod_15)
 
@@ -780,7 +839,7 @@ ests_mod_ixn <- data.frame(exp(cbind(Odds_Ratio = fixef(mod_ixn)[,1], Lower = fi
 
 ests_mod_ixn$parameters <- c("Intercept", "Frequency", "Severity", "Spatial extent", "Dispersion", "Wealth", "Household size", "Migrant number", "Dist. to pop. center", "Mean NDVI", "Frequency * Severity", "Frequency * Spatial extent", "Severity * Spatial extent", "Frequency * Severity * Spatial extent")
 
-##### Posterior checks #####
+### Posterior checks ###
 
 # For variables moderately correlated, check for signs of ridges
 
@@ -809,7 +868,7 @@ ggplot(ests_mod_ixn, aes(x = parameters, y = Odds_Ratio)) +
   labs(y = "Odds Ratio with 90% Credible Interval")
 
 
-##### "Interaction plot" (really 3D plot) #####
+### "Interaction plot" (really 3D plot) ###
 
 grid <- expand.grid(
   frequency_s = seq(min(dat$frequency_s), max(dat$frequency_s), length.out = 20),
@@ -860,6 +919,56 @@ fig <- plot_ly(grid,
 
 saveWidget(fig, "3D_Remittance_Plot.html", selfcontained = TRUE)
 
+
+
+
+##### Three-way interaction with no extreme values #####
+
+mod_ixn_noext <- brm(remit ~ 
+                 frequency_s * severity_s * area_km_s + dispersion_s + # Environmental predictors of interest
+                 wealth_index_s + hh_size_s + migrant_num_s + pop_center_s + NDVI_mean_s + # Controls
+                 (1 | date_s + census_tract + country), 
+               data = dat_noext,
+               family = bernoulli,
+               control = list(adapt_delta = 0.99),
+               prior = c(prior(cauchy(0, 2), class = "sd"),
+                         prior(normal(0, 1), class = "b")
+               )
+)
+
+# Convert to odds ratios
+
+ests_mod_ixn_noext <- data.frame(exp(cbind(Odds_Ratio = fixef(mod_ixn_noext)[,1], Lower = fixef(mod_ixn_noext, probs = c(.05, .95))[,3], Upper = fixef(mod_ixn_noext, probs = c(.5, .95))[,4])))
+
+ests_mod_ixn_noext$parameters <- c("Intercept", "Frequency", "Severity", "Spatial extent", "Dispersion", "Wealth", "Household size", "Migrant number", "Dist. to pop. center", "Mean NDVI", "Frequency * Severity", "Frequency * Spatial extent", "Severity * Spatial extent", "Frequency * Severity * Spatial extent")
+
+### Posterior checks ###
+
+# For variables moderately correlated, check for signs of ridges
+
+posterior <- as.array(mod_ixn_noext)
+
+color_scheme_set("pink")
+mcmc_pairs(posterior, pars = c("b_frequency_s:severity_s:area_km_s", "b_severity_s:area_km_s", "b_frequency_s:severity_s", "b_frequency_s:area_km_s"), # main effects look fine from first pairs plot; focus here on interaction terms
+           off_diag_args = list(size = 1.5))
+# The only clear positive trends are between interaction terms, so not surprising.
+
+bayes_R2(mod_ixn_noext)
+
+ests_mod_ixn_noext <- ests_mod_ixn_noext %>%
+  mutate(parameters = factor(parameters, levels = c("Mean NDVI", "Dist. to pop. center", "Migrant number", "Household size", "Wealth", "Frequency * Severity * Spatial extent", "Severity * Spatial extent", "Frequency * Spatial extent", "Frequency * Severity", "Spatial extent", "Dispersion", "Frequency", "Severity", "Intercept")))
+
+ggplot(ests_mod_ixn_noext, aes(x = parameters, y = Odds_Ratio)) +
+  geom_pointrange(aes(ymin = Lower, ymax = Upper), color = "blue") +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red") +
+  coord_flip() +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 15, face = "bold"),
+    axis.title.y = element_blank(),
+    axis.title.x = element_text(size = 15, face = "bold"),
+  ) +
+  labs(y = "Odds Ratio with 90% Credible Interval")
 
 ##### Senegal subs processing #####
 
