@@ -1,0 +1,1 @@
+To reproduce our results from the manuscript, download the data folder and the analysis.R folder; make sure to put the data folder and analysis.R file in the same directory, and then the code will pull the data from the data folder.
