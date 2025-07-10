@@ -335,7 +335,7 @@ doc <- read_docx() %>%
 print(doc, target = "Descriptives_Country.docx")
 
 
-### By migrants -- these are inflated so only showing migrant-specific data...!
+### By migrants -- these are inflated by repeat measurement so only showing migrant-specific data...!
 contin_mig <- dat[dat$country != "south_africa" , c("country", "remit", "hh_months")]
 
 cat_mig <- dat [ , c("country", "migrant_hh", "migrant_loc")]
@@ -682,7 +682,7 @@ dat_onerow$source <- droplevels(dat_onerow$source)
 mod_migrate <- brm(source ~ 
               severity_s + annual_frequency_s + autocorrelation_s + avg_area_km_s + # Environmental predictors of interest
               wealth_index_s + hh_size_s + migrant_num_s + pop_center_s + NDVI_mean_s + # Controls
-              (1 | date_s + census_tract + country), 
+              (1 | date_s + census_tract + country + house), 
             data = dat_onerow,
             family = categorical(),
             prior = c(
@@ -1382,7 +1382,7 @@ ests_mod15$parameters <- c("Intercept", "Severity", "Frequency", "Autocorrelatio
 
 
 ests_mod15 <- ests_mod15 %>%
-  mutate(parameters = factor(parameters, levels = c("Mean NDVI", "Dist. to pop. center", "Migrant number", "Household size", "Wealth", "Spatial extent", "Autocorrelation", "Frequency", "Severity", "Intercept")))
+  mutate(parameters = factor(parameters, levels = c("Mean NDVI", "Dist. to pop. center", "Migrant number", "Household size", "Wealth", "Spatial extent", "Autocorrelation", "Frequency", "Severity", "Intercept"))) 
 
 ggplot(ests_mod15, aes(x = parameters, y = Odds_Ratio)) +
   geom_pointrange(aes(ymin = Lower, ymax = Upper), color = "blue") +
@@ -1413,7 +1413,8 @@ ests_mod15_noext$parameters <- c("Intercept", "Severity", "Frequency", "Autocorr
 
 
 ests_mod15_noext <- ests_mod15_noext %>%
-  mutate(parameters = factor(parameters, levels = c("Mean NDVI", "Dist. to pop. center", "Migrant number", "Household size", "Wealth", "Spatial extent", "Autocorrelation", "Frequency", "Severity", "Intercept")))
+  mutate(parameters = factor(parameters, levels = c("Mean NDVI", "Dist. to pop. center", "Migrant number", "Household size", "Wealth", "Spatial extent", "Autocorrelation", "Frequency", "Severity", "Intercept"))) %>%
+  filter(!(parameters %in% c("Migrant number")))
 
 ggplot(ests_mod15_noext, aes(x = parameters, y = Odds_Ratio)) +
   geom_pointrange(aes(ymin = Lower, ymax = Upper), color = "blue") +
@@ -1698,53 +1699,3 @@ ggplot(preds_summary, aes(x = avg_area_km_s, y = severity_s, fill = mean_epred))
     #title = "Predicted probability of remittance by drought extent and severity"
   ) +
   theme_minimal()
-
-##### Two-way interaction with no extreme values #####
-
-mod_ixn_noext <- brm(any_remit ~ 
-                 annual_frequency_s * severity_s * avg_area_km_s + autocorrelation_s + # Environmental predictors of interest
-                 wealth_index_s + hh_size_s + migrant_num_s + pop_center_s + NDVI_mean_s + # Controls
-                 (1 | date_s + census_tract + country), 
-               data = dat_onerow_noext,
-               family = bernoulli,
-               control = list(adapt_delta = 0.99),
-               prior = c(prior(cauchy(0, 2), class = "sd"),
-                         prior(normal(0, 1), class = "b")
-               ),
-               backend = "cmdstanr", threads = threading(2, static = TRUE), cores = 4,
-               chains = 4
-)
-
-# Convert to odds ratios
-
-ests_mod_ixn_noext <- data.frame(exp(cbind(Odds_Ratio = fixef(mod_ixn_noext)[,1], Lower = fixef(mod_ixn_noext, probs = c(.05, .95))[,3], Upper = fixef(mod_ixn_noext, probs = c(.5, .95))[,4])))
-
-ests_mod_ixn_noext$parameters <- c("Intercept", "Frequency", "Severity", "Spatial extent", "Autocorrelation", "Wealth", "Household size", "Migrant number", "Dist. to pop. center", "Mean NDVI", "Frequency * Severity", "Frequency * Spatial extent", "Severity * Spatial extent", "Frequency * Severity * Spatial extent")
-
-### Posterior checks ###
-
-# For variables moderately correlated, check for signs of ridges
-
-posterior <- as.array(mod_ixn_noext)
-
-color_scheme_set("pink")
-mcmc_pairs(posterior, pars = c("b_annual_frequency_s:severity_s:avg_area_km_s", "b_severity_s:avg_area_km_s", "b_annual_frequency_s:severity_s", "b_annual_frequency_s:avg_area_km_s"), # main effects look fine from first pairs plot; focus here on interaction terms
-           off_diag_args = list(size = 1.5))
-# The only clear positive trends are between interaction terms, so not surprising.
-
-bayes_R2(mod_ixn_noext)
-
-ests_mod_ixn_noext <- ests_mod_ixn_noext %>%
-  mutate(parameters = factor(parameters, levels = c("Mean NDVI", "Dist. to pop. center", "Migrant number", "Household size", "Wealth", "Frequency * Severity * Spatial extent", "Severity * Spatial extent", "Frequency * Spatial extent", "Frequency * Severity", "Spatial extent", "Autocorrelation", "Frequency", "Severity", "Intercept")))
-
-ggplot(ests_mod_ixn_noext, aes(x = parameters, y = Odds_Ratio)) +
-  geom_pointrange(aes(ymin = Lower, ymax = Upper), color = "blue") +
-  geom_hline(yintercept = 1, linetype = "dashed", color = "red") +
-  coord_flip() +
-  theme_classic() +
-  theme(
-    axis.text = element_text(size = 15, face = "bold"),
-    axis.title.y = element_blank(),
-    axis.title.x = element_text(size = 15, face = "bold"),
-  ) +
-  labs(y = "Odds Ratio with 90% Credible Interval")
