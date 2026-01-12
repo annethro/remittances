@@ -1,8 +1,12 @@
+##### Monetary transfers are related to patterning in climate events, not just single extreme events #####
+### Code maintained by Anne Pisor (pisor@psu.edu) ###
+# All code was run in R 4.5.1
+# Last updated on January 12, 2026
 # Download data files first from: https://github.com/annethro/remittances/
 
-lapply(c("tidyverse", "geosphere", "ggcorrplot", "rnaturalearth", "sf", "ggpubr", "brms", "bayesplot", "officer", "flextable", "cmdstanr", "plotly", "webshot", "htmlwidgets", "tidybayes", "Hmisc", "cowplot"), library, character.only = TRUE)
+lapply(c("tidyverse", "geosphere", "ggcorrplot", "rnaturalearth", "sf", "ggpubr", "brms", "bayesplot", "officer", "flextable", "cmdstanr", "plotly", "webshot", "htmlwidgets", "tidybayes", "Hmisc", "patchwork"), library, character.only = TRUE)
 
-#webshot::install_phantomjs(force = TRUE) # Only run once, if you want to export the interactive interaction plot in html. Force = TRUE because was available for R 4.4.0 but not 4.4.3
+#webshot::install_phantomjs(force = TRUE) # Only run once, if you want to export the interactive interaction plot in html. Force = TRUE because was available for R 4.4.0, not more recent versions
 
 # If you don't have cmdstanr installed you can get it this way:
 #install.packages("cmdstanr", repos = c('https://stan-dev.r-universe.dev', getOption("repos")))
@@ -18,6 +22,8 @@ dat <- read_csv("data/spei3_yr5_perc.csv")
 # We include a data dictionary on GitHub, but some notes here: lat and long are where the participant's census tract is located, based on coding done by JHJ and AP; lat_SPEI and long_SPEI refer to the nearest point we have for precipitation for SPEI, so one can examine the distance as the crow flies between participant's census tract and the nearest precipitation point; pop_cent_lat and pop_cent_long refer to the nearest population center according to nighttime lights data; we use this to calculate distance as the crow flies below.
 
 # Some notes about data: (1) Though there is some lack of clarity in surveys and in metadata/recorded protocol, it appears that "household size" refers to people *currently* in the home, not migrants -- which is why migrant number can be bigger than household size. (2) NA for remittances is a zero -- these are households that did not report receiving money or goods from migrants but answered other questions, so there is not reason to think questions about remittances were skipped. (3) Reminder that we're using avg_area and distance in meters...!
+
+# We've added multiple places to save.image, to avoid having to re-run models given the computing requirements and time. We recommend using save.image checkpoints and using load() to reload the workspace.
 
 ##### Data processing #####
 
@@ -63,12 +69,12 @@ dat$autocorrelation[is.na(dat$autocorrelation)] <- 0
 
 dat <- dat[!is.na(dat$lat), ]
 
-# NAs are meaningful for remit: nonhousehold migrants are generally only reported if they're sending remittances, given the nature of this survey, and we ensure that rows for household migrants are valid by ensuring they had remittance, current location, and/or time in location data; all remaining NAs are meaningful, so converting to zero for analysis [CHECK - if keep this, what am I going to do for ALL remittance measures? cross-check...!]
+# NAs are meaningful for remit: nonhousehold migrants are generally only reported if they're sending remittances, given the nature of this survey, and we ensure that rows for household migrants are valid by ensuring they had remittance, current location, and/or time in location data; all remaining NAs are meaningful, so converting to zero for analysis
 dat <- dat %>% 
   mutate(remit = replace_na(remit, 0),
          any_remit = replace_na(any_remit, 0))
 
-
+ 
 ##### Calculate distance as the crow flies to the nearest population center #####
 
 dat <- dat %>%
@@ -102,7 +108,7 @@ dat <- dat %>%
     .default = "none"
   ))
 
-### Collapse to hh in-country, hh out-country, non-hh in-country, non-hh out-country to reduce chaos
+### Collapse to hh in-country, hh out-country, non-hh in-country, non-hh out-country because we don't have good location data for out-of-country migrants
 
 dat$hh_by_loc <- case_when(
   dat$migrant_hh == "hh" & dat$migrant_loc == "national" ~ "hh_natl",
@@ -139,9 +145,9 @@ dat$hh_months_s <- as.numeric(scale(dat$hh_months))
 dat$wealth_index_s <- as.numeric(scale(dat$wealth_index))
 dat$annual_frequency_s <- as.numeric(scale(dat$annual_frequency))
 
-# Subset to unique (one row per house) to avoid inflating statistics with houses that have many migrants
+# Create a subset that is one row per house for two uses: (1) for descriptive statistics, to avoid inflating statistics with houses that have many migrants, and (2) for models where there's only one outcome per household (e.g., Model 1, with just presence/absence of remittances for a given household)
 
-dat_onerow <- distinct(dat, house, country, .keep_all = TRUE)
+dat_onerow <- distinct(dat, house, country, .keep_all = TRUE) # House number is unique by country, so get distinctness with reference to both these columns
 
 
 ##### Descriptive stats #####
@@ -563,7 +569,7 @@ mod1 <- brm(any_remit ~
           ),
           backend = "cmdstanr", threads = threading(2, static = TRUE), cores = 4,
           chains = 4 # Reminder that I have a seed set for the entire session (see top)
-)
+) # NAs excluded refer to interviewees with no interview date; this is as expected
 
 
 # Convert to odds ratios
@@ -578,8 +584,15 @@ ests_mod1$parameters <- c("Intercept", "Spatial extent", "Severity", "Frequency"
 
 posterior <- as.array(mod1)
 
+# First, environmental data
+
 color_scheme_set("pink")
 mcmc_pairs(posterior, pars = c("b_NDVI_mean_s", "b_avg_area_km_s", "b_annual_frequency_s", "b_autocorrelation_s", "b_severity_s"),
+           off_diag_args = list(size = 1.5))
+
+# Second, social data
+
+mcmc_pairs(posterior, pars = c("b_wealth_index_s", "b_hh_size_s", "b_migrant_num_s", "b_pop_center_s"),
            off_diag_args = list(size = 1.5))
 
 bayes_R2(mod1)
@@ -605,11 +618,9 @@ ggplot(ests_mod1, aes(x = parameters, y = Odds_Ratio)) +
 # So you don't have to re-run this thing!
 save.image("patterning_remittances.RData")
 
-load("patterning_remittances.RData")
+#load("patterning_remittances.RData")
 
 ############# EXPLORATORY ANALYSES ################
-
-# Subset to household senders only: months migrant has been in current location (should be more than 12) and receipt in last 12 months
 
 ##### Check main model fit robustness to exclusion of extreme values #####
 
@@ -668,475 +679,7 @@ ggplot(ests_mod1_noext, aes(x = parameters, y = Odds_Ratio)) +
   labs(y = "Odds Ratio with 90% Credible Interval")
 
 
-##### 2.3.1.1 Send a migrant? #####
-
-# Change contrast category
-
-dat_onerow$source <- relevel(as.factor(dat_onerow$source), "none")
-
-dat_onerow$source[dat_onerow$source == "hh_non-hh"] <- "hh"
-dat_onerow$source <- droplevels(dat_onerow$source)
-
-# Model
-
-mod_migrate <- brm(source ~ 
-              severity_s + annual_frequency_s + autocorrelation_s + avg_area_km_s + # Environmental predictors of interest
-              wealth_index_s + hh_size_s + migrant_num_s + pop_center_s + NDVI_mean_s + # Controls
-              (1 | date_s + census_tract + country + house), 
-            data = dat_onerow,
-            family = categorical(),
-            prior = c(
-              prior(cauchy(0, 1), class = "sd", dpar = "munonhh"),
-              prior(cauchy(0, 1), class = "sd", dpar = "muhh"),
-              prior(normal(0, 1), class = "b", dpar = "munonhh"),
-              prior(normal(0, 1), class = "b", dpar = "muhh")
-            ),
-            control = list(adapt_delta = 0.99),
-            backend = "cmdstanr", threads = threading(2, static = TRUE), cores = 4, 
-            chains = 4
-)
-
-save.image("patterning_remittances.RData")
-
-# Convert to odds ratios
-
-ests_mod_migrate <- data.frame(exp(cbind(Odds_Ratio = fixef(mod_migrate)[,1], Lower = fixef(mod_migrate, probs = c(.05, .95))[,3], Upper = fixef(mod_migrate, probs = c(.5, .95))[,4])))
-
-ests_mod_migrate$parameters <- c("HH-Intercept", "NonHH-Intercept", "HH-Severity", "HH-Frequency", "HH-Autocorrelation", "HH-Spatial extent", "HH-Wealth", "HH-Household size", "HH-Migrant number", "HH-Dist. to pop. center", "HH-Mean NDVI", "NonHH-Severity", "NonHH-Frequency", "NonHH-Autocorrelation", "NonHH-Spatial extent", "NonHH-Wealth", "NonHH-Household size", "NonHH-Migrant number", "NonHH-Dist. to pop. center", "NonHH-Mean NDVI")
-
-### Posterior checks ###
-
-# For variables moderately correlated, check for signs of ridges
-
-posterior <- as.array(mod_migrate)
-
-color_scheme_set("pink")
-mcmc_pairs(posterior, pars = c("b_muhh_NDVI_mean_s", "b_muhh_avg_area_km_s", "b_muhh_annual_frequency_s", "b_muhh_autocorrelation_s", "b_muhh_severity_s"),
-           off_diag_args = list(size = 1.5))
-
-mcmc_pairs(posterior, pars = c("b_munonhh_NDVI_mean_s", "b_munonhh_avg_area_km_s", "b_munonhh_annual_frequency_s", "b_munonhh_autocorrelation_s", "b_munonhh_severity_s"),
-           off_diag_args = list(size = 1.5))
-
-# Can't do Bayes R2 for categorical models
-
-### Caterpillar plot ###
-
-ests_mod_migrate <- ests_mod_migrate %>%
-  mutate(parameters = factor(parameters, levels = rev(ests_mod_migrate$parameters))) %>%
-  filter(!(parameters %in% c("HH-Intercept", "HH-Migrant number"))) # HH-migrant-num estimate is off the charts (as we already knew from other models) and there's a lot of uncertainty around the household estimate; remove so can see others
-
-ggplot(ests_mod_migrate, aes(x = parameters, y = Odds_Ratio)) +
-  geom_pointrange(aes(ymin = Lower, ymax = Upper), color = "blue") +
-  geom_hline(yintercept = 1, linetype = "dashed", color = "red") +
-  coord_flip() +
-  theme_classic() +
-  theme(
-    axis.text = element_text(size = 15, face = "bold"),
-    axis.title.y = element_blank(),
-    axis.title.x = element_text(size = 15, face = "bold"),
-  ) +
-  labs(y = "Odds Ratio with 90% Credible Interval")
-
-
-
-##### 2.3.1.2 Decorrelating risk and expense of moving #####
-
-# Interaction of hh/non-hh migrant and their location with spatial extent
-
-dat$hh_by_loc <- relevel(as.factor(dat$hh_by_loc), "hh_natl") # Cheapest to get probably
-
-# Model
-
-mod_decorr <- brm(remit ~ 
-              severity_s + annual_frequency_s + autocorrelation_s + avg_area_km_s * hh_by_loc + # Environmental predictors of interest
-              wealth_index_s + hh_size_s + migrant_num_s + pop_center_s + NDVI_mean_s + # Controls
-              (1 | date_s + house + census_tract + country), 
-            data = dat,
-            family = bernoulli,
-            control = list(adapt_delta = 0.99),
-            prior = c(prior(cauchy(0, 2), class = "sd"),
-                      prior(normal(0, 1), class = "b"),
-                      prior(normal(0, 2.5), class = "Intercept")
-            ),
-            backend = "cmdstanr", threads = threading(2, static = TRUE), cores = 4,
-            chains = 4 # Reminder that I have a seed set for the entire session (see top)
-)
-
-save.image("patterning_remittances.RData")
-
-# Convert to odds ratios
-
-ests_mod_decorr <- data.frame(exp(cbind(Odds_Ratio = fixef(mod_decorr)[,1], Lower = fixef(mod_decorr, probs = c(.05, .95))[,3], Upper = fixef(mod_decorr, probs = c(.5, .95))[,4])))
-
-ests_mod_decorr$parameters <- c("Intercept", "Severity", "Frequency", "Autocorrelation", "Spatial extent", "HH-International", "HH-National", "Non-HH-International", "Wealth", "Household size", "Migrant number", "Dist. to pop. center", "Mean NDVI", "HH-Interational:Spatial extent", "HH-National:Spatial extent", "Non-HH-International:Spatial extent")
-
-### Posterior checks ###
-
-# For variables moderately correlated, check for signs of ridges
-
-posterior <- as.array(mod_decorr)
-
-color_scheme_set("pink")
-mcmc_pairs(posterior, pars = c("b_NDVI_mean_s", "b_avg_area_km_s", "b_annual_frequency_s", "b_autocorrelation_s", "b_severity_s"),
-           off_diag_args = list(size = 1.5))
-
-bayes_R2(mod_decorr) # 0.3392029
-
-### Caterpillar plot ###
-
-ests_mod_decorr <- ests_mod_decorr %>%
-  mutate(parameters = factor(parameters, levels = c("Non-HH-International:Spatial extent", "HH-National:Spatial extent", "HH-Interational:Spatial extent", "Mean NDVI", "Dist. to pop. center", "Migrant number", "Household size", "Wealth", "Non-HH-International","HH-National","HH-International", "Spatial extent", "Autocorrelation", "Frequency", "Severity", "Intercept")))
-
-ggplot(ests_mod_decorr, aes(x = parameters, y = Odds_Ratio)) +
-  geom_pointrange(aes(ymin = Lower, ymax = Upper), color = "blue") +
-  geom_hline(yintercept = 1, linetype = "dashed", color = "red") +
-  coord_flip() +
-  theme_classic() +
-  theme(
-    axis.text = element_text(size = 15, face = "bold"),
-    axis.title.y = element_blank(),
-    axis.title.x = element_text(size = 15, face = "bold"),
-  ) +
-  labs(y = "Odds Ratio with 90% Credible Interval")
-
-## Investigating the really large OR for the intercept -- does this suggest unusual uncertainty? Support from ChatGPT on this one.
-
-bayesplot::mcmc_hist(as_draws_df(mod_decorr), pars = "b_Intercept") # +/-2 to +/-4 range is pretty normal for a model estimate on this scale; not hugely clustered at +/- 2.5, so probably not straining against the prior (and no truncation). Peak at 3 means 95% probability at the intercept - this is true for non-household members, which is likely what's being picked up.
-
-### Examine two-way interactions ###
-
-means <- dat %>%
-  summarise(across(c(severity_s, annual_frequency_s, autocorrelation_s, pop_center_s, wealth_index_s, hh_size_s, migrant_num_s, pop_center_s, NDVI_mean_s), ~ mean(.x, na.rm = TRUE)))
-
-# Get range of avg_area_km_s
-avg_area_km_s_seq <- seq(min(dat$avg_area_km_s, na.rm = TRUE), max(dat$avg_area_km_s, na.rm = TRUE), length.out = 100)
-
-# Create new data grid
-grid_base <- expand_grid(
-  hh_by_loc = unique(na.omit(factor(dat$hh_by_loc))),   # all levels of source
-  avg_area_km_s = avg_area_km_s_seq
-)
-
-new_data <- grid_base %>%
-  bind_cols(means[rep(1, nrow(grid_base)), ])
-
-preds <- new_data %>%
-  add_epred_draws(mod_decorr, re_formula = NA)  # remove REs for marginal/fixed predictions
-
-# Plot
-
-ggplot(preds, aes(x = avg_area_km_s, y = .epred, color = hh_by_loc, fill = hh_by_loc)) +
-  stat_summary(fun = mean, geom = "line", linewidth = 2) +
-  stat_summary(fun.data = mean_cl_boot, geom = "ribbon", alpha = 0.2, color = NA) +
-  labs(
-    x = "Spatial extent",
-    y = "Predicted probability of remittance",
-    color = "HH-location level",
-    fill = "HH-location level"
-  ) +
-  theme_classic() +
-  theme(
-    axis.text = element_text(size = 15, face = "bold"),
-    axis.title.y = element_blank(),
-    axis.title.x = element_text(size = 15, face = "bold"),
-  ) +
-  theme(legend.position = "right")
-
-##### 2.3.1.3 When did migration occur? #####
-
-mod_when <- brm(remit ~ 
-                    severity_s*hh_time + annual_frequency_s*hh_time  + autocorrelation_s*hh_time  + avg_area_km_s*hh_time  + # Environmental predictors of interest
-                    wealth_index_s + hh_size_s + migrant_num_s + pop_center_s + NDVI_mean_s + # Controls
-                    (1 | date_s + house + census_tract + country), 
-                  data = dat,
-                  family = bernoulli,
-                  control = list(adapt_delta = 0.99),
-                  prior = c(prior(cauchy(0, 2), class = "sd"),
-                            prior(normal(0, 1), class = "b")
-                  ),
-                  backend = "cmdstanr", threads = threading(2, static = TRUE), cores = 4,
-                  chains = 4 # Reminder that I have a seed set for the entire session (see top)
-)
-
-save.image("patterning_remittances.RData")
-
-# Convert to odds ratios
-
-ests_mod_when <- data.frame(exp(cbind(Odds_Ratio = fixef(mod_when)[,1], Lower = fixef(mod_when, probs = c(.05, .95))[,3], Upper = fixef(mod_when, probs = c(.5, .95))[,4])))
-
-ests_mod_when$parameters <- c("Intercept", "Severity", "Time-Interval", "Time-Late", "Frequency", "Autocorrelation", "Spatial extent", "Wealth", "Household size", "Migrant number", "Dist. to pop. center", "Mean NDVI", "Time-Interval:Severity", "Time-After:Severity", "Time-Interval:Frequency", "Time-After:Frequency", "Time-Interval:Autocorrelation", "Time-After:Autocorrelation", "Time-Interval:Spatial extent", "Time-After:Spatial extent")
-
-### Posterior checks ###
-
-# For variables moderately correlated, check for signs of ridges
-
-posterior <- as.array(mod_when)
-
-color_scheme_set("pink")
-mcmc_pairs(posterior, pars = c("b_NDVI_mean_s", "b_avg_area_km_s", "b_annual_frequency_s", "b_autocorrelation_s", "b_severity_s"),
-           off_diag_args = list(size = 1.5))
-
-bayes_R2(mod_when) # 0.2670573
-
-### Caterpillar plot ###
-
-ests_mod_when <- ests_mod_when %>%
-  mutate(parameters = factor(parameters, levels = c("Time-After:Spatial extent", "Time-Interval:Spatial extent", "Time-After:Autocorrelation", "Time-Interval:Autocorrelation", "Time-After:Frequency", "Time-Interval:Frequency", "Time-After:Severity", "Time-Interval:Severity", "Mean NDVI", "Dist. to pop. center", "Migrant number", "Household size", "Wealth", "Time-Late","Time-Interval", "Spatial extent", "Autocorrelation", "Frequency", "Severity", "Intercept"))) 
-
-ggplot(ests_mod_when, aes(x = parameters, y = Odds_Ratio)) +
-  geom_pointrange(aes(ymin = Lower, ymax = Upper), color = "blue") +
-  geom_hline(yintercept = 1, linetype = "dashed", color = "red") +
-  coord_flip() +
-  theme_classic() +
-  theme(
-    axis.text = element_text(size = 15, face = "bold"),
-    axis.title.y = element_blank(),
-    axis.title.x = element_text(size = 15, face = "bold"),
-  ) +
-  labs(y = "Odds Ratio with 90% Credible Interval")
-
-### Examine two-way interactions ###
-
-## Severity
-
-means <- dat %>%
-  summarise(across(c(annual_frequency_s, autocorrelation_s, avg_area_km_s, pop_center_s, wealth_index_s, hh_size_s, migrant_num_s, pop_center_s, NDVI_mean_s), ~ mean(.x, na.rm = TRUE)))
-
-# Get range of severity_s
-severity_s_seq <- seq(min(dat$severity_s, na.rm = TRUE), max(dat$severity_s, na.rm = TRUE), length.out = 100)
-
-# Create new data grid
-grid_base <- expand_grid(
-  hh_time = unique(na.omit(factor(dat$hh_time))),   # all levels of source
-  severity_s = severity_s_seq
-)
-
-new_data <- grid_base %>%
-  bind_cols(means[rep(1, nrow(grid_base)), ])
-
-preds <- new_data %>%
-  add_epred_draws(mod_when, re_formula = NA)  # remove REs for marginal/fixed predictions
-
-# Plot
-
-sev_plot <- ggplot(preds, aes(x = severity_s, y = .epred, color = hh_time, fill = hh_time)) +
-  stat_summary(fun = mean, geom = "line", size = 2) +
-  stat_summary(fun.data = mean_cl_boot, geom = "ribbon", alpha = 0.2, color = NA) +
-  labs(
-    x = "Severity",
-    y = "Predicted probability of remittance",
-    color = "Timing",
-    fill = "Timing"
-  ) +
-  theme_classic() +
-  theme(
-    axis.text = element_text(size = 15, face = "bold"),
-    axis.title.y = element_text(size = 15, face = "bold"),
-    axis.title.x = element_text(size = 15, face = "bold"),
-    legend.position = "none",
-    plot.margin = margin(t = 40, r = 10, b = 0, l = 10)
-  ) +
-  coord_cartesian(xlim = c(-2, 5), ylim = c(0.2, 0.75), clip = "off") +
-  annotate("text", x = -2.3, y = 0.85, label = "A", size = 6, fontface = "bold")
-
-## Spatial extent
-
-means <- dat %>%
-  summarise(across(c(severity_s, annual_frequency_s, autocorrelation_s, pop_center_s, wealth_index_s, hh_size_s, migrant_num_s, pop_center_s, NDVI_mean_s), ~ mean(.x, na.rm = TRUE)))
-
-# Get range of avg_area_km_s
-avg_area_km_s_seq <- seq(min(dat$avg_area_km_s, na.rm = TRUE), max(dat$avg_area_km_s, na.rm = TRUE), length.out = 100)
-
-# Create new data grid
-grid_base <- expand_grid(
-  hh_time = unique(na.omit(factor(dat$hh_time))),   # all levels of source
-  avg_area_km_s = avg_area_km_s_seq
-)
-
-new_data <- grid_base %>%
-  bind_cols(means[rep(1, nrow(grid_base)), ])
-
-preds <- new_data %>%
-  add_epred_draws(mod_when, re_formula = NA)  # remove REs for marginal/fixed predictions
-
-# Plot
-
-spa_plot <- ggplot(preds, aes(x = avg_area_km_s, y = .epred, color = hh_time, fill = hh_time)) +
-  stat_summary(fun = mean, geom = "line", size = 2) +
-  stat_summary(fun.data = mean_cl_boot, geom = "ribbon", alpha = 0.2, color = NA) +
-  labs(
-    x = "Spatial extent",
-    y = "Predicted probability of remittance",
-    color = "Timing",
-    fill = "Timing"
-  ) +
-  theme_classic() +
-  theme(
-    axis.text = element_text(size = 15, face = "bold"),
-    axis.title.y = element_blank(),
-    axis.title.x = element_text(size = 15, face = "bold"),
-    legend.position = "right",
-    plot.margin = margin(t = 40, r = 10, b = 0, l = 10)
-  ) +
-  coord_cartesian(xlim = c(-2, 5), ylim = c(0.2, 0.75), clip = "off") +
-  annotate("text", x = -2.3, y = 0.85, label = "B", size = 6, fontface = "bold")
-
-
-## Frequency
-
-means <- dat %>%
-  summarise(across(c(severity_s, autocorrelation_s, avg_area_km_s, pop_center_s, wealth_index_s, hh_size_s, migrant_num_s, pop_center_s, NDVI_mean_s), ~ mean(.x, na.rm = TRUE)))
-
-# Get range of annual_frequency_s
-annual_frequency_s_seq <- seq(min(dat$annual_frequency_s, na.rm = TRUE), max(dat$annual_frequency_s, na.rm = TRUE), length.out = 100)
-
-# Create new data grid
-grid_base <- expand_grid(
-  hh_time = unique(na.omit(factor(dat$hh_time))),   # all levels of source
-  annual_frequency_s = annual_frequency_s_seq
-)
-
-new_data <- grid_base %>%
-  bind_cols(means[rep(1, nrow(grid_base)), ])
-
-preds <- new_data %>%
-  add_epred_draws(mod_when, re_formula = NA)  # remove REs for marginal/fixed predictions
-
-# Plot
-
-freq_plot <- ggplot(preds, aes(x = annual_frequency_s, y = .epred, color = hh_time, fill = hh_time)) +
-  stat_summary(fun = mean, geom = "line", size = 2) +
-  stat_summary(fun.data = mean_cl_boot, geom = "ribbon", alpha = 0.2, color = NA) +
-  labs(
-    x = "Frequency",
-    y = "Predicted probability of remittance",
-    color = "Timing",
-    fill = "Timing"
-  ) +
-  theme_classic() +
-  theme(
-    axis.text = element_text(size = 15, face = "bold"),
-    axis.title.y = element_text(size = 15, face = "bold"),
-    axis.title.x = element_text(size = 15, face = "bold"),
-    legend.position = "none",
-    plot.margin = margin(t = 40, r = 10, b = 0, l = 10)
-  )  +
-  coord_cartesian(xlim = c(-2, 5), ylim = c(0.2, 0.75), clip = "off") +
-  annotate("text", x = -2.3, y = 0.85, label = "C", size = 6, fontface = "bold")
-
-## Autocorrelation
-
-means <- dat %>%
-  summarise(across(c(severity_s, annual_frequency_s, avg_area_km_s, pop_center_s, wealth_index_s, hh_size_s, migrant_num_s, pop_center_s, NDVI_mean_s), ~ mean(.x, na.rm = TRUE)))
-
-# Get range of autocorrelation_s
-autocorrelation_s_seq <- seq(min(dat$autocorrelation_s, na.rm = TRUE), max(dat$autocorrelation_s, na.rm = TRUE), length.out = 100)
-
-# Create new data grid
-grid_base <- expand_grid(
-  hh_time = unique(na.omit(factor(dat$hh_time))),   # all levels of source
-  autocorrelation_s = autocorrelation_s_seq
-)
-
-new_data <- grid_base %>%
-  bind_cols(means[rep(1, nrow(grid_base)), ])
-
-preds <- new_data %>%
-  add_epred_draws(mod_when, re_formula = NA)  # remove REs for marginal/fixed predictions
-
-# Plot
-
-auto_plot <- ggplot(preds, aes(x = autocorrelation_s, y = .epred, color = hh_time, fill = hh_time)) +
-  stat_summary(fun = mean, geom = "line", size = 2) +
-  stat_summary(fun.data = mean_cl_boot, geom = "ribbon", alpha = 0.2, color = NA) +
-  labs(
-    x = "Temporal autocorrelation",
-    y = "Predicted probability of remittance",
-    color = "Timing",
-    fill = "Timing"
-  ) +
-  theme_classic() +
-  theme(
-    axis.text = element_text(size = 15, face = "bold"),
-    axis.title.y = element_blank(),
-    axis.title.x = element_text(size = 15, face = "bold"),
-    legend.position = "right",
-    plot.margin = margin(t = 40, r = 10, b = 0, l = 10)
-  ) +
-  coord_cartesian(xlim = c(-2, 5), ylim = c(0.2, 0.75), clip = "off") +
-  annotate("text", x = -2.3, y = 0.85, label = "D", size = 6, fontface = "bold")
-
-## Save
-
-#combined_plot <- plot_grid(sev_plot, spa_plot, freq_plot, auto_plot, 
-                          # ncol = 2)
-
-combined_plot <- (sev_plot + spa_plot) /
-  (freq_plot + auto_plot) +
-  plot_layout(guides = "collect")
-
-ggsave("facet_plot.pdf", combined_plot, width = 10, height = 8)
-
-
-##### Do climate variables predict when to send a migrant? #####
-
-# Change contrast category
-
-dat$hh_time <- relevel(as.factor(dat$hh_time), "early")
-
-# Model
-
-mod_time <- brm(hh_time ~ 
-                     severity_s + annual_frequency_s + autocorrelation_s + avg_area_km_s + # Environmental predictors of interest
-                     wealth_index_s + hh_size_s + migrant_num_s + pop_center_s + NDVI_mean_s + # Controls
-                     (1 | house + date_s + census_tract + country), 
-                   data = dat,
-                   family = categorical(),
-                   control = list(adapt_delta = 0.99),
-                   backend = "cmdstanr", threads = threading(2, static = TRUE), cores = 4, 
-                   chains = 4
-)
-
-save.image("patterning_remittances.RData")
-
-# Convert to odds ratios
-
-ests_mod_time <- data.frame(exp(cbind(Odds_Ratio = fixef(mod_time)[,1], Lower = fixef(mod_time, probs = c(.05, .95))[,3], Upper = fixef(mod_time, probs = c(.5, .95))[,4])))
-
-ests_mod_time$parameters <- c("Interval-Intercept", "After-Intercept", "Interval-Severity", "Interval-Frequency", "Interval-Autocorrelation", "Interval-Spatial extent", "Interval-Wealth", "Interval-Household size", "Interval-Migrant number", "Interval-Dist. to pop. center", "Interval-Mean NDVI", "After-Severity", "After-Frequency", "After-Autocorrelation", "After-Spatial extent", "After-Wealth", "After-Household size", "After-Migrant number", "After-Dist. to pop. center", "After-Mean NDVI")
-
-### Posterior checks ###
-
-# For variables moderately correlated, check for signs of ridges
-
-posterior <- as.array(mod_time)
-
-color_scheme_set("pink")
-mcmc_pairs(posterior, pars = c("b_muinterval_NDVI_mean_s", "b_muinterval_avg_area_km_s", "b_muinterval_annual_frequency_s", "b_muinterval_autocorrelation_s", "b_muinterval_severity_s", "b_mulate_NDVI_mean_s", "b_mulate_avg_area_km_s", "b_mulate_annual_frequency_s", "b_mulate_autocorrelation_s", "b_mulate_severity_s"),
-           off_diag_args = list(size = 1.5))
-
-# bayes_R2(mod_time) # Not defined for categorical models
-
-### Caterpillar plot ###
-
-ests_mod_time <- ests_mod_time %>%
-  mutate(parameters = factor(parameters, levels = rev(c("Interval-Intercept", "After-Intercept", "Interval-Severity", "Interval-Frequency", "Interval-Autocorrelation", "Interval-Spatial extent", "Interval-Wealth", "Interval-Household size", "Interval-Migrant number", "Interval-Dist. to pop. center", "Interval-Mean NDVI", "After-Severity", "After-Frequency", "After-Autocorrelation", "After-Spatial extent", "After-Wealth", "After-Household size", "After-Migrant number", "After-Dist. to pop. center", "After-Mean NDVI")))) #%>%
-  #filter(!(parameters %in% c("Migrant number")))
-
-ggplot(ests_mod_time, aes(x = parameters, y = Odds_Ratio)) +
-  geom_pointrange(aes(ymin = Lower, ymax = Upper), color = "blue") +
-  geom_hline(yintercept = 1, linetype = "dashed", color = "red") +
-  coord_flip() +
-  theme_classic() +
-  theme(
-    axis.text = element_text(size = 15, face = "bold"),
-    axis.title.y = element_blank(),
-    axis.title.x = element_text(size = 15, face = "bold"),
-  ) +
-  labs(y = "Odds Ratio with 90% Credible Interval")
-
-
-##### 2.3.1.4 Time window #####
+##### 2.4.1.1 Time window #####
 
 # What if hydroclimate patterns are considered over 10 years instead of 5?
 
@@ -1235,13 +778,14 @@ color_scheme_set("pink")
 mcmc_pairs(posterior_10, pars = c("b_yr10_NDVI_mean_s", "b_yr10_avg_area_km_s", "b_yr10_annual_frequency_s", "b_yr10_autocorrelation_s", "b_yr10_severity_s"),
            off_diag_args = list(size = 1.5))
 
-ests_time0 <- data.frame(exp(cbind(Odds_Ratio = fixef(mod_10)[,1], Lower = fixef(mod_10, probs = c(.05, .95))[,3], Upper = fixef(mod_10, probs = c(.5, .95))[,4])))
+ests_mod10 <- data.frame(exp(cbind(Odds_Ratio = fixef(mod_10)[,1], Lower = fixef(mod_10, probs = c(.05, .95))[,3], Upper = fixef(mod_10, probs = c(.5, .95))[,4])))
 
 ests_mod10$parameters <- c("Intercept", "Severity", "Frequency",  "Autocorrelation", "Spatial extent", "Wealth", "Household size", "Migrant number", "Dist. to pop. center", "Mean NDVI")
 
 
 ests_mod10 <- ests_mod10 %>%
-  mutate(parameters = factor(parameters, levels = c("Mean NDVI", "Dist. to pop. center", "Migrant number", "Household size", "Wealth", "Spatial extent", "Autocorrelation", "Frequency", "Severity",  "Intercept")))
+  mutate(parameters = factor(parameters, levels = c("Mean NDVI", "Dist. to pop. center", "Migrant number", "Household size", "Wealth", "Spatial extent", "Autocorrelation", "Frequency", "Severity",  "Intercept"))) %>%
+  filter(parameters != "Migrant number")
 
 ggplot(ests_mod10, aes(x = parameters, y = Odds_Ratio)) +
   geom_pointrange(aes(ymin = Lower, ymax = Upper), color = "blue") +
@@ -1258,7 +802,7 @@ ggplot(ests_mod10, aes(x = parameters, y = Odds_Ratio)) +
 bayes_R2(mod_10) #0.3366964
 
 
-##### Thresholds #####
+##### 2.4.1.2 Thresholds #####
 
 # What if we use -1.5 SD thresholds, as SD approaches are common in the literature, instead of a percentile threshold?
 
@@ -1382,7 +926,8 @@ ests_mod15$parameters <- c("Intercept", "Severity", "Frequency", "Autocorrelatio
 
 
 ests_mod15 <- ests_mod15 %>%
-  mutate(parameters = factor(parameters, levels = c("Mean NDVI", "Dist. to pop. center", "Migrant number", "Household size", "Wealth", "Spatial extent", "Autocorrelation", "Frequency", "Severity", "Intercept"))) 
+  mutate(parameters = factor(parameters, levels = c("Mean NDVI", "Dist. to pop. center", "Migrant number", "Household size", "Wealth", "Spatial extent", "Autocorrelation", "Frequency", "Severity", "Intercept"))) %>%
+  filter(parameters != "Migrant number")
 
 ggplot(ests_mod15, aes(x = parameters, y = Odds_Ratio)) +
   geom_pointrange(aes(ymin = Lower, ymax = Upper), color = "blue") +
@@ -1429,7 +974,7 @@ ggplot(ests_mod15_noext, aes(x = parameters, y = Odds_Ratio)) +
   labs(y = "Odds Ratio with 90% Credible Interval")
 
 
-##### SPEI length #####
+##### 2.4.1.3 SPEI length #####
 
 # What if we consider 12-month SPEI, which is more similar to the Palmer Drought Index and can better capture effects on water supply, instead of the 3-month?
 
@@ -1555,7 +1100,7 @@ ggplot(ests_mod12, aes(x = parameters, y = Odds_Ratio)) +
 
 
 
-##### Severity in vegetation cover #####
+##### 2.4.1.4 Severity in vegetation cover #####
 # Correlation with other model variables is no higher than 0.19, so add to full model with no removals
 
 svi_sev <- brm(any_remit ~ 
@@ -1589,9 +1134,80 @@ ests_svi$parameters <- c("Intercept", "SVI severity", "Autocorrelation", "Freque
 
 
 ests_svi <- ests_svi %>%
-  mutate(parameters = factor(parameters, levels = c("Mean NDVI", "Dist. to pop. center", "Migrant number", "Household size", "Wealth", "Spatial extent", "Autocorrelation", "Frequency", "Severity", "SVI severity", "Intercept")))
+  mutate(parameters = factor(parameters, levels = c("Mean NDVI", "Dist. to pop. center", "Migrant number", "Household size", "Wealth", "Spatial extent", "Autocorrelation", "Frequency", "Severity", "SVI severity", "Intercept"))) %>%
+  filter(parameters != "Migrant number")
+  
+  ggplot(ests_svi, aes(x = parameters, y = Odds_Ratio)) +
+    geom_hline(yintercept = 1, linetype = "dashed", color = "red") +
+    geom_pointrange(aes(ymin = Lower, ymax = Upper), color = "blue") +
+    coord_flip() +
+    theme_classic() +
+    theme(
+      axis.text = element_text(size = 15, face = "bold"),
+      axis.title.y = element_blank(),
+      axis.title.x = element_text(size = 15, face = "bold"),
+    ) +
+    labs(y = "Odds Ratio with 90% Credible Interval")
 
-ggplot(ests_svi, aes(x = parameters, y = Odds_Ratio)) +
+
+##### 2.4.2.1 Send a migrant? #####
+
+# Change contrast category
+
+dat_onerow$source <- relevel(as.factor(dat_onerow$source), "none")
+
+dat_onerow$source[dat_onerow$source == "hh_non-hh"] <- "hh"
+dat_onerow$source <- droplevels(dat_onerow$source)
+
+# Model
+
+mod_migrate <- brm(source ~ 
+                     severity_s + annual_frequency_s + autocorrelation_s + avg_area_km_s + # Environmental predictors of interest
+                     wealth_index_s + hh_size_s + migrant_num_s + pop_center_s + NDVI_mean_s + # Controls
+                     (1 | date_s + census_tract + country + house), 
+                   data = dat_onerow,
+                   family = categorical(),
+                   prior = c(
+                     prior(cauchy(0, 1), class = "sd", dpar = "munonhh"),
+                     prior(cauchy(0, 1), class = "sd", dpar = "muhh"),
+                     prior(normal(0, 1), class = "b", dpar = "munonhh"),
+                     prior(normal(0, 1), class = "b", dpar = "muhh")
+                   ),
+                   control = list(adapt_delta = 0.99),
+                   backend = "cmdstanr", threads = threading(2, static = TRUE), cores = 4, 
+                   chains = 4
+)
+
+save.image("patterning_remittances.RData")
+
+# Convert to odds ratios
+
+ests_mod_migrate <- data.frame(exp(cbind(Odds_Ratio = fixef(mod_migrate)[,1], Lower = fixef(mod_migrate, probs = c(.05, .95))[,3], Upper = fixef(mod_migrate, probs = c(.5, .95))[,4])))
+
+ests_mod_migrate$parameters <- c("HH-Intercept", "NonHH-Intercept", "HH-Severity", "HH-Frequency", "HH-Autocorrelation", "HH-Spatial extent", "HH-Wealth", "HH-Household size", "HH-Migrant number", "HH-Dist. to pop. center", "HH-Mean NDVI", "NonHH-Severity", "NonHH-Frequency", "NonHH-Autocorrelation", "NonHH-Spatial extent", "NonHH-Wealth", "NonHH-Household size", "NonHH-Migrant number", "NonHH-Dist. to pop. center", "NonHH-Mean NDVI")
+
+### Posterior checks ###
+
+# For variables moderately correlated, check for signs of ridges
+
+posterior <- as.array(mod_migrate)
+
+color_scheme_set("pink")
+mcmc_pairs(posterior, pars = c("b_muhh_NDVI_mean_s", "b_muhh_avg_area_km_s", "b_muhh_annual_frequency_s", "b_muhh_autocorrelation_s", "b_muhh_severity_s"),
+           off_diag_args = list(size = 1.5))
+
+mcmc_pairs(posterior, pars = c("b_munonhh_NDVI_mean_s", "b_munonhh_avg_area_km_s", "b_munonhh_annual_frequency_s", "b_munonhh_autocorrelation_s", "b_munonhh_severity_s"),
+           off_diag_args = list(size = 1.5))
+
+# Can't do Bayes R2 for categorical models
+
+### Caterpillar plot ###
+
+ests_mod_migrate <- ests_mod_migrate %>%
+  mutate(parameters = factor(parameters, levels = rev(ests_mod_migrate$parameters))) %>%
+  filter(!(parameters %in% c("HH-Intercept", "HH-Migrant number"))) # HH-migrant-num estimate is off the charts (as we already knew from other models) and there's a lot of uncertainty around the household estimate; remove so can see others
+
+ggplot(ests_mod_migrate, aes(x = parameters, y = Odds_Ratio)) +
   geom_pointrange(aes(ymin = Lower, ymax = Upper), color = "blue") +
   geom_hline(yintercept = 1, linetype = "dashed", color = "red") +
   coord_flip() +
@@ -1604,7 +1220,401 @@ ggplot(ests_svi, aes(x = parameters, y = Odds_Ratio)) +
   labs(y = "Odds Ratio with 90% Credible Interval")
 
 
-##### Two-way interaction plot #####
+
+##### 2.4.2.2 Decorrelating risk and expense of moving #####
+
+# Interaction of hh/non-hh migrant and their location with spatial extent
+
+dat$hh_by_loc <- relevel(as.factor(dat$hh_by_loc), "hh_natl") # Cheapest to get probably
+
+# Model
+
+mod_decorr <- brm(remit ~ 
+                    severity_s + annual_frequency_s + autocorrelation_s + avg_area_km_s * hh_by_loc + # Environmental predictors of interest
+                    wealth_index_s + hh_size_s + migrant_num_s + pop_center_s + NDVI_mean_s + # Controls
+                    (1 | date_s + house + census_tract + country), 
+                  data = dat,
+                  family = bernoulli,
+                  control = list(adapt_delta = 0.99),
+                  prior = c(prior(cauchy(0, 2), class = "sd"),
+                            prior(normal(0, 1), class = "b"),
+                            prior(normal(0, 2.5), class = "Intercept")
+                  ),
+                  backend = "cmdstanr", threads = threading(2, static = TRUE), cores = 4,
+                  chains = 4 # Reminder that I have a seed set for the entire session (see top)
+)
+
+save.image("patterning_remittances.RData")
+
+# Convert to odds ratios
+
+ests_mod_decorr <- data.frame(exp(cbind(Odds_Ratio = fixef(mod_decorr)[,1], Lower = fixef(mod_decorr, probs = c(.05, .95))[,3], Upper = fixef(mod_decorr, probs = c(.5, .95))[,4])))
+
+ests_mod_decorr$parameters <- c("Intercept", "Severity", "Frequency", "Autocorrelation", "Spatial extent", "HH-International", "HH-National", "Non-HH-International", "Wealth", "Household size", "Migrant number", "Dist. to pop. center", "Mean NDVI", "HH-Interational:Spatial extent", "HH-National:Spatial extent", "Non-HH-International:Spatial extent")
+
+### Posterior checks ###
+
+# For variables moderately correlated, check for signs of ridges
+
+posterior <- as.array(mod_decorr)
+
+color_scheme_set("pink")
+mcmc_pairs(posterior, pars = c("b_NDVI_mean_s", "b_avg_area_km_s", "b_annual_frequency_s", "b_autocorrelation_s", "b_severity_s"),
+           off_diag_args = list(size = 1.5))
+
+bayes_R2(mod_decorr) # 0.3392029
+
+### Caterpillar plot ###
+
+ests_mod_decorr <- ests_mod_decorr %>%
+  mutate(parameters = factor(parameters, levels = c("Non-HH-International:Spatial extent", "HH-National:Spatial extent", "HH-Interational:Spatial extent", "Mean NDVI", "Dist. to pop. center", "Migrant number", "Household size", "Wealth", "Non-HH-International","HH-National","HH-International", "Spatial extent", "Autocorrelation", "Frequency", "Severity", "Intercept")))
+
+ggplot(ests_mod_decorr, aes(x = parameters, y = Odds_Ratio)) +
+  geom_pointrange(aes(ymin = Lower, ymax = Upper), color = "blue") +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red") +
+  coord_flip() +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 15, face = "bold"),
+    axis.title.y = element_blank(),
+    axis.title.x = element_text(size = 15, face = "bold"),
+  ) +
+  labs(y = "Odds Ratio with 90% Credible Interval")
+
+## Investigating the really large OR for the intercept -- does this suggest unusual uncertainty? Support from ChatGPT on this one.
+
+bayesplot::mcmc_hist(as_draws_df(mod_decorr), pars = "b_Intercept") # +/-2 to +/-4 range is pretty normal for a model estimate on this scale; not hugely clustered at +/- 2.5, so probably not straining against the prior (and no truncation). Peak at 3 means 95% probability at the intercept - this is true for non-household members, which is likely what's being picked up.
+
+### Examine two-way interactions ###
+
+means <- dat %>%
+  summarise(across(c(severity_s, annual_frequency_s, autocorrelation_s, pop_center_s, wealth_index_s, hh_size_s, migrant_num_s, pop_center_s, NDVI_mean_s), ~ mean(.x, na.rm = TRUE)))
+
+# Get range of avg_area_km_s
+avg_area_km_s_seq <- seq(min(dat$avg_area_km_s, na.rm = TRUE), max(dat$avg_area_km_s, na.rm = TRUE), length.out = 100)
+
+# Create new data grid
+grid_base <- expand_grid(
+  hh_by_loc = unique(na.omit(factor(dat$hh_by_loc))),   # all levels of source
+  avg_area_km_s = avg_area_km_s_seq
+)
+
+new_data <- grid_base %>%
+  bind_cols(means[rep(1, nrow(grid_base)), ])
+
+preds <- new_data %>%
+  add_epred_draws(mod_decorr, re_formula = NA)  # remove REs for marginal/fixed predictions
+
+# Plot
+
+ggplot(preds, aes(x = avg_area_km_s, y = .epred, color = hh_by_loc, fill = hh_by_loc)) +
+  stat_summary(fun = mean, geom = "line", linewidth = 2) +
+  stat_summary(fun.data = mean_cl_boot, geom = "ribbon", alpha = 0.2, color = NA) +
+  labs(
+    x = "Spatial extent",
+    y = "Predicted probability of remittance",
+    color = "HH-location level",
+    fill = "HH-location level"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 15, face = "bold"),
+    axis.title.y = element_blank(),
+    axis.title.x = element_text(size = 15, face = "bold"),
+  ) +
+  theme(legend.position = "right")
+
+##### 2.4.2.3 When did migration occur? #####
+
+# Change contrast category
+
+dat$hh_time <- relevel(as.factor(dat$hh_time), "early")
+
+# Model
+
+mod_time <- brm(hh_time ~ 
+                  severity_s + annual_frequency_s + autocorrelation_s + avg_area_km_s + # Environmental predictors of interest
+                  wealth_index_s + hh_size_s + migrant_num_s + pop_center_s + NDVI_mean_s + # Controls
+                  (1 | house + date_s + census_tract + country), 
+                data = dat,
+                family = categorical(),
+                control = list(adapt_delta = 0.99),
+                backend = "cmdstanr", threads = threading(2, static = TRUE), cores = 4, 
+                chains = 4
+)
+
+save.image("patterning_remittances.RData")
+
+# Convert to odds ratios
+
+ests_mod_time <- data.frame(exp(cbind(Odds_Ratio = fixef(mod_time)[,1], Lower = fixef(mod_time, probs = c(.05, .95))[,3], Upper = fixef(mod_time, probs = c(.5, .95))[,4])))
+
+ests_mod_time$parameters <- c("Interval-Intercept", "After-Intercept", "Interval-Severity", "Interval-Frequency", "Interval-Autocorrelation", "Interval-Spatial extent", "Interval-Wealth", "Interval-Household size", "Interval-Migrant number", "Interval-Dist. to pop. center", "Interval-Mean NDVI", "After-Severity", "After-Frequency", "After-Autocorrelation", "After-Spatial extent", "After-Wealth", "After-Household size", "After-Migrant number", "After-Dist. to pop. center", "After-Mean NDVI")
+
+### Posterior checks ###
+
+# For variables moderately correlated, check for signs of ridges
+
+posterior <- as.array(mod_time)
+
+color_scheme_set("pink")
+mcmc_pairs(posterior, pars = c("b_muinterval_NDVI_mean_s", "b_muinterval_avg_area_km_s", "b_muinterval_annual_frequency_s", "b_muinterval_autocorrelation_s", "b_muinterval_severity_s", "b_mulate_NDVI_mean_s", "b_mulate_avg_area_km_s", "b_mulate_annual_frequency_s", "b_mulate_autocorrelation_s", "b_mulate_severity_s"),
+           off_diag_args = list(size = 1.5))
+
+# bayes_R2(mod_time) # Not defined for categorical models
+
+### Caterpillar plot ###
+
+ests_mod_time <- ests_mod_time %>%
+  mutate(parameters = factor(parameters, levels = rev(c("Interval-Intercept", "After-Intercept", "Interval-Severity", "Interval-Frequency", "Interval-Autocorrelation", "Interval-Spatial extent", "Interval-Wealth", "Interval-Household size", "Interval-Migrant number", "Interval-Dist. to pop. center", "Interval-Mean NDVI", "After-Severity", "After-Frequency", "After-Autocorrelation", "After-Spatial extent", "After-Wealth", "After-Household size", "After-Migrant number", "After-Dist. to pop. center", "After-Mean NDVI")))) #%>%
+#filter(!(parameters %in% c("Migrant number")))
+
+ggplot(ests_mod_time, aes(x = parameters, y = Odds_Ratio)) +
+  geom_pointrange(aes(ymin = Lower, ymax = Upper), color = "blue") +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red") +
+  coord_flip() +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 15, face = "bold"),
+    axis.title.y = element_blank(),
+    axis.title.x = element_text(size = 15, face = "bold"),
+  ) +
+  labs(y = "Odds Ratio with 90% Credible Interval")
+
+
+##### 2.4.2.4 Interaction: Do climate variables predict when to send a migrant?  #####
+
+mod_when <- brm(remit ~ 
+                  severity_s*hh_time + annual_frequency_s*hh_time  + autocorrelation_s*hh_time  + avg_area_km_s*hh_time  + # Environmental predictors of interest
+                  wealth_index_s + hh_size_s + migrant_num_s + pop_center_s + NDVI_mean_s + # Controls
+                  (1 | date_s + house + census_tract + country), 
+                data = dat,
+                family = bernoulli,
+                control = list(adapt_delta = 0.99),
+                prior = c(prior(cauchy(0, 2), class = "sd"),
+                          prior(normal(0, 1), class = "b")
+                ),
+                backend = "cmdstanr", threads = threading(2, static = TRUE), cores = 4,
+                chains = 4 # Reminder that I have a seed set for the entire session (see top)
+)
+
+save.image("patterning_remittances.RData")
+
+# Convert to odds ratios
+
+ests_mod_when <- data.frame(exp(cbind(Odds_Ratio = fixef(mod_when)[,1], Lower = fixef(mod_when, probs = c(.05, .95))[,3], Upper = fixef(mod_when, probs = c(.5, .95))[,4])))
+
+ests_mod_when$parameters <- c("Intercept", "Severity", "Time-Interval", "Time-Late", "Frequency", "Autocorrelation", "Spatial extent", "Wealth", "Household size", "Migrant number", "Dist. to pop. center", "Mean NDVI", "Time-Interval:Severity", "Time-After:Severity", "Time-Interval:Frequency", "Time-After:Frequency", "Time-Interval:Autocorrelation", "Time-After:Autocorrelation", "Time-Interval:Spatial extent", "Time-After:Spatial extent")
+
+### Posterior checks ###
+
+# For variables moderately correlated, check for signs of ridges
+
+posterior <- as.array(mod_when)
+
+color_scheme_set("pink")
+mcmc_pairs(posterior, pars = c("b_NDVI_mean_s", "b_avg_area_km_s", "b_annual_frequency_s", "b_autocorrelation_s", "b_severity_s"),
+           off_diag_args = list(size = 1.5))
+
+bayes_R2(mod_when) # 0.2670573
+
+### Caterpillar plot ###
+
+ests_mod_when <- ests_mod_when %>%
+  mutate(parameters = factor(parameters, levels = c("Time-After:Spatial extent", "Time-Interval:Spatial extent", "Time-After:Autocorrelation", "Time-Interval:Autocorrelation", "Time-After:Frequency", "Time-Interval:Frequency", "Time-After:Severity", "Time-Interval:Severity", "Mean NDVI", "Dist. to pop. center", "Migrant number", "Household size", "Wealth", "Time-Late","Time-Interval", "Spatial extent", "Autocorrelation", "Frequency", "Severity", "Intercept"))) 
+
+ggplot(ests_mod_when, aes(x = parameters, y = Odds_Ratio)) +
+  geom_pointrange(aes(ymin = Lower, ymax = Upper), color = "blue") +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red") +
+  coord_flip() +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 15, face = "bold"),
+    axis.title.y = element_blank(),
+    axis.title.x = element_text(size = 15, face = "bold"),
+  ) +
+  labs(y = "Odds Ratio with 90% Credible Interval")
+
+### Examine two-way interactions ###
+
+three_colors <- c('#1b9e77','#d95f02','#7570b3') # Thanks ColorBrewer
+
+## Severity
+
+means <- dat %>%
+  summarise(across(c(annual_frequency_s, autocorrelation_s, avg_area_km_s, pop_center_s, wealth_index_s, hh_size_s, migrant_num_s, NDVI_mean_s), ~ mean(.x, na.rm = TRUE)))
+
+# Get range of severity_s
+severity_s_seq <- seq(min(dat$severity_s, na.rm = TRUE), 5, length.out = 100) # Max severity is 5.71 but so far off the range of the other drought characteristics, just cut at 5 to avoid messiness on the plot (it literally plots off the edge)
+
+# Create new data grid
+grid_base <- expand_grid(
+  hh_time = unique(na.omit(factor(dat$hh_time))),   # all levels of source
+  severity_s = severity_s_seq
+)
+
+new_data <- grid_base %>%
+  bind_cols(means[rep(1, nrow(grid_base)), ])
+
+preds <- new_data %>%
+  add_epred_draws(mod_when, re_formula = NA)  # remove REs for marginal/fixed predictions
+
+# Plot
+
+sev_plot <- ggplot(preds, aes(x = severity_s, y = .epred, color = hh_time, fill = hh_time)) +
+  stat_summary(fun = mean, geom = "line", size = 2) +
+  scale_color_manual(values = three_colors) +
+  labs(
+    x = "Severity",
+    y = "Predicted probability of remittance",
+    color = "Timing"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 15, face = "bold"),
+    axis.title.y = element_text(size = 15, face = "bold"),
+    axis.title.x = element_text(size = 15, face = "bold"),
+    legend.position = "none",
+    plot.margin = margin(t = 40, r = 10, b = 0, l = 10)
+  ) +
+  coord_cartesian(xlim = c(-2, 5), ylim = c(0, 1), clip = "off") +
+  annotate("text", x = -2.35, y = 1.125, label = "A", size = 6, fontface = "bold")
+
+## Spatial extent
+
+means <- dat %>%
+  summarise(across(c(severity_s, annual_frequency_s, autocorrelation_s, wealth_index_s, hh_size_s, migrant_num_s, pop_center_s, NDVI_mean_s), ~ mean(.x, na.rm = TRUE)))
+
+# Get range of avg_area_km_s
+avg_area_km_s_seq <- seq(min(dat$avg_area_km_s, na.rm = TRUE), max(dat$avg_area_km_s, na.rm = TRUE), length.out = 100)
+
+# Create new data grid
+grid_base <- expand_grid(
+  hh_time = unique(na.omit(factor(dat$hh_time))),   # all levels of source
+  avg_area_km_s = avg_area_km_s_seq
+)
+
+new_data <- grid_base %>%
+  bind_cols(means[rep(1, nrow(grid_base)), ])
+
+preds <- new_data %>%
+  add_epred_draws(mod_when, re_formula = NA)  # remove REs for marginal/fixed predictions
+
+# Plot
+
+spa_plot <- ggplot(preds, aes(x = avg_area_km_s, y = .epred, color = hh_time, fill = hh_time)) +
+  stat_summary(fun = mean, geom = "line", size = 2) +
+  scale_color_manual(values = three_colors) +
+  labs(
+    x = "Spatial extent",
+    y = "Predicted probability of remittance",
+    color = "Timing"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 15, face = "bold"),
+    axis.title.y = element_blank(),
+    axis.title.x = element_text(size = 15, face = "bold"),
+    legend.position = "right",
+    plot.margin = margin(t = 40, r = 10, b = 0, l = 10)
+  ) +
+  coord_cartesian(xlim = c(-2, 5), ylim = c(0, 1), clip = "off") +
+  annotate("text", x = -2.35, y = 1.125, label = "B", size = 6, fontface = "bold")
+
+
+## Frequency
+
+means <- dat %>%
+  summarise(across(c(severity_s, autocorrelation_s, avg_area_km_s, wealth_index_s, hh_size_s, migrant_num_s, pop_center_s, NDVI_mean_s), ~ mean(.x, na.rm = TRUE)))
+
+# Get range of annual_frequency_s
+annual_frequency_s_seq <- seq(min(dat$annual_frequency_s, na.rm = TRUE), max(dat$annual_frequency_s, na.rm = TRUE), length.out = 100)
+
+# Create new data grid
+grid_base <- expand_grid(
+  hh_time = unique(na.omit(factor(dat$hh_time))),   # all levels of source
+  annual_frequency_s = annual_frequency_s_seq
+)
+
+new_data <- grid_base %>%
+  bind_cols(means[rep(1, nrow(grid_base)), ])
+
+preds <- new_data %>%
+  add_epred_draws(mod_when, re_formula = NA)  # remove REs for marginal/fixed predictions
+
+# Plot
+
+freq_plot <- ggplot(preds, aes(x = annual_frequency_s, y = .epred, color = hh_time)) +
+  stat_summary(fun = mean, geom = "line", size = 2) +
+  scale_color_manual(values = three_colors) +
+  labs(
+    x = "Frequency",
+    y = "Predicted probability of remittance",
+    color = "Timing"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 15, face = "bold"),
+    axis.title.y = element_text(size = 15, face = "bold"),
+    axis.title.x = element_text(size = 15, face = "bold"),
+    legend.position = "none",
+    plot.margin = margin(t = 40, r = 10, b = 0, l = 10)
+  )  +
+  coord_cartesian(xlim = c(-2, 5), ylim = c(0, 1), clip = "off") +
+  annotate("text", x = -2.35, y = 1.125, label = "C", size = 6, fontface = "bold")
+
+## Autocorrelation
+
+means <- dat %>%
+  summarise(across(c(severity_s, annual_frequency_s, avg_area_km_s, wealth_index_s, hh_size_s, migrant_num_s, pop_center_s, NDVI_mean_s), ~ mean(.x, na.rm = TRUE)))
+
+# Get range of autocorrelation_s
+autocorrelation_s_seq <- seq(min(dat$autocorrelation_s, na.rm = TRUE), max(dat$autocorrelation_s, na.rm = TRUE), length.out = 100)
+
+# Create new data grid
+grid_base <- expand_grid(
+  hh_time = unique(na.omit(factor(dat$hh_time))),   # all levels of source
+  autocorrelation_s = autocorrelation_s_seq
+)
+
+new_data <- grid_base %>%
+  bind_cols(means[rep(1, nrow(grid_base)), ])
+
+preds <- new_data %>%
+  add_epred_draws(mod_when, re_formula = NA)  # remove REs for marginal/fixed predictions
+
+# Plot
+
+auto_plot <- ggplot(preds, aes(x = autocorrelation_s, y = .epred, color = hh_time)) +
+  stat_summary(fun = mean, geom = "line", size = 2) +
+  scale_color_manual(values = three_colors) +
+  labs(
+    x = "Temporal autocorrelation",
+    y = "Predicted probability of remittance",
+    color = "Timing"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 15, face = "bold"),
+    axis.title.y = element_blank(),
+    axis.title.x = element_text(size = 15, face = "bold"),
+    legend.position = "right",
+    plot.margin = margin(t = 40, r = 10, b = 0, l = 10)
+  ) +
+  coord_cartesian(xlim = c(-2, 5), ylim = c(0, 1), clip = "off") +
+  annotate("text", x = -2.35, y = 1.125, label = "D", size = 6, fontface = "bold")
+
+## Save
+
+combined_plot <- (sev_plot + spa_plot) /
+  (freq_plot + auto_plot) +
+  plot_layout(guides = "collect")
+
+ggsave("facet_plot.pdf", combined_plot, width = 10, height = 8)
+
+
+
+##### 2.4.2.5 Interaction: Severity and spatial extent #####
 
 mod_ixn <- brm(any_remit ~ 
               severity_s * avg_area_km_s + annual_frequency_s + autocorrelation_s +  # Environmental predictors of interest
@@ -1659,12 +1669,12 @@ ggplot(ests_mod_ixn, aes(x = parameters, y = Odds_Ratio)) +
 ### Examine two-way interactions ###
 
 means <- dat_onerow_noext %>%
-  summarise(across(c(annual_frequency_s, autocorrelation_s, pop_center_s, wealth_index_s, hh_size_s, migrant_num_s, pop_center_s, NDVI_mean_s), ~ mean(.x, na.rm = TRUE)))
+  summarise(across(c(annual_frequency_s, autocorrelation_s, pop_center_s, wealth_index_s, hh_size_s, migrant_num_s, NDVI_mean_s), ~ mean(.x, na.rm = TRUE)))
 
 # Get range of avg_area_km_s
 avg_area_km_s_seq <- seq(min(dat_onerow$avg_area_km_s, na.rm = TRUE), max(dat_onerow$avg_area_km_s, na.rm = TRUE), length.out = 100)
 
-# Get range of avg_area_km_s
+# Get range of severity
 severity_s_seq <- seq(min(dat_onerow$severity_s, na.rm = TRUE), max(dat_onerow$severity_s, na.rm = TRUE), length.out = 100)
 
 # Create new data grid
@@ -1699,3 +1709,561 @@ ggplot(preds_summary, aes(x = avg_area_km_s, y = severity_s, fill = mean_epred))
     #title = "Predicted probability of remittance by drought extent and severity"
   ) +
   theme_minimal()
+
+
+##### 2.4.2.6 Interaction: Look for effects by country #####
+
+mod1_by_country <- brm(any_remit ~ 
+              (avg_area_km_s + severity_s + annual_frequency_s + autocorrelation_s) * country +
+              wealth_index_s + hh_size_s + migrant_num_s + pop_center_s + NDVI_mean_s +
+              (1 | date_s + census_tract + country), 
+            data = dat_onerow,
+            family = bernoulli,
+            control = list(adapt_delta = 0.99,
+                           max_treedepth = 12),
+            prior = c(prior(cauchy(0, 2), class = "sd"),
+                      prior(normal(0, 1), class = "b")
+            ),
+            backend = "cmdstanr", threads = threading(2, static = TRUE), cores = 4,
+            chains = 4
+) # This flags that NAs were excluded; it's from date_s
+
+
+### Posterior checks ###
+
+# For variables moderately correlated, check for signs of ridges
+
+posterior <- as.array(mod1_by_country)
+
+color_scheme_set("pink")
+mcmc_pairs(posterior, pars = c("b_NDVI_mean_s", "b_avg_area_km_s", "b_annual_frequency_s", "b_autocorrelation_s", "b_severity_s"),
+           off_diag_args = list(size = 1.5)) # Looks good
+
+bayes_R2(mod1_by_country) # 0.3380483
+
+# Convert to odds ratios
+
+ests_mod1_by_country <- data.frame(exp(cbind(Odds_Ratio = fixef(mod1_by_country)[,1], Lower = fixef(mod1_by_country, probs = c(.05, .95))[,3], Upper = fixef(mod1_by_country, probs = c(.5, .95))[,4])))
+
+ests_mod1_by_country$parameters <- c("Intercept", "Spatial extent", "Severity", "Frequency", "Autocorrelation", "Kenya", "Nigeria", "Senegal", "South Africa", "Uganda", "Wealth", "Household size", "Migrant number", "Dist. to pop. center", "Mean NDVI", "Spatial extent:Kenya", "Spatial extent:Nigeria", "Spatial extent:Senegal", "Spatial extent:South Africa", "Spatial extent:Uganda", "Severity:Kenya", "Severity:Nigeria", "Severity:Senegal", "Severity:South Africa", "Severity:Uganda", "Frequency:Kenya", "Frequency:Nigeria", "Frequency:Senegal", "Frequency:South Africa", "Frequency:Uganda", "Autocorrelation:Kenya", "Autocorrelation:Nigeria", "Autocorrelation:Senegal", "Autocorrelation:South Africa", "Autocorrelation:Uganda")
+
+### Caterpillar plot ###
+
+ests_mod1_by_country <- ests_mod1_by_country %>%
+  mutate(parameters = factor(parameters, levels = rev(ests_mod1_by_country$parameters))) %>%
+  filter(!(parameters %in% c("Migrant number"))) # Big odds ratio so makes other effects easier to see
+
+ggplot(ests_mod1_by_country, aes(x = parameters, y = Odds_Ratio)) +
+  geom_pointrange(aes(ymin = Lower, ymax = Upper), color = "blue") +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red") +
+  coord_flip() +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 15, face = "bold"),
+    axis.title.y = element_blank(),
+    axis.title.x = element_text(size = 15, face = "bold"),
+  ) +
+  labs(y = "Odds Ratio with 90% Credible Interval")
+
+### Examine two-way interactions ###
+
+six_colors <- c('#1b9e77','#d95f02','#7570b3','#e7298a','#66a61e','#e6ab02')
+
+## Severity
+
+means <- dat_onerow %>%
+  summarise(across(c(annual_frequency_s, autocorrelation_s, avg_area_km_s, pop_center_s, wealth_index_s, hh_size_s, migrant_num_s, NDVI_mean_s), ~ mean(.x, na.rm = TRUE)),
+            .groups = "drop") %>%
+  select(-country)
+
+# Get range of severity_s
+severity_s_seq <- seq(min(dat_onerow$severity_s, na.rm = TRUE), 5, length.out = 100) # Max severity is 5.71 but so far off the range of the other drought characteristics, just cut at 5 to avoid messiness on the plot (it literally plots off the edge)
+
+# Create new data grid
+grid_base <- expand_grid(
+  country = unique(na.omit(factor(dat_onerow$country))),   # all levels of source
+  severity_s = severity_s_seq
+)
+
+new_data <- grid_base %>%
+  bind_cols(means[rep(1, nrow(grid_base)), ])
+
+preds <- new_data %>%
+  add_epred_draws(mod1_by_country, re_formula = NA)  # remove REs for marginal/fixed predictions
+
+# Plot
+
+sev_plot <- ggplot(preds, aes(x = severity_s, y = .epred, color = country, fill = country)) +
+  stat_summary(fun = mean, geom = "line", linewidth = 2) +
+  labs(
+    x = "Severity",
+    y = "Predicted probability of remittance",
+    color = "Country",
+    fill = "Country"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 15, face = "bold"),
+    axis.title.y = element_text(size = 15, face = "bold"),
+    axis.title.x = element_text(size = 15, face = "bold"),
+    legend.position = "none",
+    plot.margin = margin(t = 40, r = 10, b = 0, l = 10)
+  ) +
+  coord_cartesian(xlim = c(-2, 5), ylim = c(0, 1.00), clip = "off") +
+  annotate("text", x = -2.35, y = 1.125, label = "A", size = 6, fontface = "bold") +
+  labs(color = "Country", fill = "Country") +
+  scale_color_manual(values = six_colors,
+    labels = c("Burkina Faso", "Kenya", "Nigeria", "Senegal", "South Africa", "Uganda")
+  ) +
+  scale_fill_manual(values = six_colors,
+                     labels = c("Burkina Faso", "Kenya", "Nigeria", "Senegal", "South Africa", "Uganda")
+  )
+
+
+## Spatial extent
+
+means <- dat_onerow %>%
+  summarise(across(c(severity_s, annual_frequency_s, autocorrelation_s, wealth_index_s, hh_size_s, migrant_num_s, pop_center_s, NDVI_mean_s), ~ mean(.x, na.rm = TRUE)),
+            .groups = "drop") %>%
+  select(-country)
+
+# Get range of avg_area_km_s
+avg_area_km_s_seq <- seq(min(dat_onerow$avg_area_km_s, na.rm = TRUE), max(dat_onerow$avg_area_km_s, na.rm = TRUE), length.out = 100)
+
+# Create new data grid
+grid_base <- expand_grid(
+  country = unique(na.omit(factor(dat_onerow$country))),   # all levels of source
+  avg_area_km_s = avg_area_km_s_seq
+)
+
+new_data <- grid_base %>%
+  bind_cols(means[rep(1, nrow(grid_base)), ])
+
+preds <- new_data %>%
+  add_epred_draws(mod1_by_country, re_formula = NA)  # remove REs for marginal/fixed predictions
+
+# Plot
+
+spa_plot <- ggplot(preds, aes(x = avg_area_km_s, y = .epred, color = country, fill = country)) +
+  stat_summary(fun = mean, geom = "line", size = 2) +
+  labs(
+    x = "Spatial extent",
+    y = "Predicted probability of remittance",
+    color = "Country",
+    fill = "Country"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 15, face = "bold"),
+    axis.title.y = element_blank(),
+    axis.title.x = element_text(size = 15, face = "bold"),
+    legend.position = "right",
+    plot.margin = margin(t = 40, r = 10, b = 0, l = 10)
+  ) +
+  coord_cartesian(xlim = c(-2, 5), ylim = c(0, 1.00), clip = "off") +
+  annotate("text", x = -2.35, y = 1.125, label = "D", size = 6, fontface = "bold") +
+  labs(color = "Country", fill = "Country") +
+  scale_color_manual(values = six_colors,
+                     labels = c("Burkina Faso", "Kenya", "Nigeria", "Senegal", "South Africa", "Uganda")
+  ) +
+  scale_fill_manual(values = six_colors,
+                    labels = c("Burkina Faso", "Kenya", "Nigeria", "Senegal", "South Africa", "Uganda")
+  )
+
+
+## Frequency
+
+means <- dat_onerow %>%
+  summarise(across(c(severity_s, autocorrelation_s, avg_area_km_s, pop_center_s, wealth_index_s, hh_size_s, migrant_num_s, NDVI_mean_s), ~ mean(.x, na.rm = TRUE)),
+            .groups = "drop") %>%
+  select(-country)
+
+# Get range of annual_frequency_s
+annual_frequency_s_seq <- seq(min(dat_onerow$annual_frequency_s, na.rm = TRUE), max(dat_onerow$annual_frequency_s, na.rm = TRUE), length.out = 100)
+
+# Create new data grid
+grid_base <- expand_grid(
+  country = unique(na.omit(factor(dat_onerow$country))),   # all levels of source
+  annual_frequency_s = annual_frequency_s_seq
+)
+
+new_data <- grid_base %>%
+  bind_cols(means[rep(1, nrow(grid_base)), ])
+
+preds <- new_data %>%
+  add_epred_draws(mod1_by_country, re_formula = NA)  # remove REs for marginal/fixed predictions
+
+# Plot
+
+freq_plot <- ggplot(preds, aes(x = annual_frequency_s, y = .epred, color = country, fill = country)) +
+  stat_summary(fun = mean, geom = "line", size = 2) +
+  labs(
+    x = "Frequency",
+    y = "Predicted probability of remittance",
+    color = "Country",
+    fill = "Country"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 15, face = "bold"),
+    axis.title.y = element_text(size = 15, face = "bold"),
+    axis.title.x = element_text(size = 15, face = "bold"),
+    legend.position = "none",
+    plot.margin = margin(t = 40, r = 10, b = 0, l = 10)
+  )  +
+  coord_cartesian(xlim = c(-2, 5), ylim = c(0, 1.00), clip = "off") +
+  annotate("text", x = -2.35, y = 1.125, label = "B", size = 6, fontface = "bold") +
+  labs(color = "Country", fill = "Country") +
+  scale_color_manual(values = six_colors,
+                     labels = c("Burkina Faso", "Kenya", "Nigeria", "Senegal", "South Africa", "Uganda")
+  ) +
+  scale_fill_manual(values = six_colors,
+                    labels = c("Burkina Faso", "Kenya", "Nigeria", "Senegal", "South Africa", "Uganda")
+  )
+
+
+## Autocorrelation
+
+means <- dat_onerow %>%
+  summarise(across(c(severity_s, annual_frequency_s, avg_area_km_s, wealth_index_s, hh_size_s, migrant_num_s, pop_center_s, NDVI_mean_s), ~ mean(.x, na.rm = TRUE)),
+            .groups = "drop") %>%
+  select(-country)
+
+# Get range of autocorrelation_s
+autocorrelation_s_seq <- seq(min(dat_onerow$autocorrelation_s, na.rm = TRUE), max(dat_onerow$autocorrelation_s, na.rm = TRUE), length.out = 100)
+
+# Create new data grid
+grid_base <- expand_grid(
+  country = unique(na.omit(factor(dat_onerow$country))),   # all levels of source
+  autocorrelation_s = autocorrelation_s_seq
+)
+
+new_data <- grid_base %>%
+  bind_cols(means[rep(1, nrow(grid_base)), ])
+
+preds <- new_data %>%
+  add_epred_draws(mod1_by_country, re_formula = NA)  # remove REs for marginal/fixed predictions
+
+# Plot
+
+auto_plot <- ggplot(preds, aes(x = autocorrelation_s, y = .epred, color = country, fill = country)) +
+  stat_summary(fun = mean, geom = "line", size = 2) +
+  labs(
+    x = "Temporal autocorrelation",
+    y = "Predicted probability of remittance",
+    color = "Country",
+    fill = "Country"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 15, face = "bold"),
+    axis.title.y = element_blank(),
+    axis.title.x = element_text(size = 15, face = "bold"),
+    legend.position = "none",
+    plot.margin = margin(t = 40, r = 10, b = 0, l = 10)
+  ) +
+  coord_cartesian(xlim = c(-2, 5), ylim = c(0, 1.00), clip = "off") +
+  annotate("text", x = -2.35, y = 1.125, label = "C", size = 6, fontface = "bold") +
+  labs(color = "Country", fill = "Country") +
+  scale_color_manual(values = six_colors,
+                     labels = c("Burkina Faso", "Kenya", "Nigeria", "Senegal", "South Africa", "Uganda")
+  ) +
+  scale_fill_manual(values = six_colors,
+                    labels = c("Burkina Faso", "Kenya", "Nigeria", "Senegal", "South Africa", "Uganda")
+  )
+
+## Save facet plot
+
+combined_plot <- (sev_plot + freq_plot) /
+  (auto_plot + spa_plot) +
+  plot_layout(guides = "collect")
+
+ggsave("facet_plot_country.pdf", combined_plot, width = 10, height = 8)
+
+
+##### 2.4.2.7 Interaction: Urban/rural #####
+
+mod1_urban_rural <- brm(any_remit ~ 
+                         (avg_area_km_s + severity_s + annual_frequency_s + autocorrelation_s) * pop_center_s +
+                         wealth_index_s + hh_size_s + migrant_num_s + pop_center_s + NDVI_mean_s +
+                         (1 | date_s + census_tract + country), 
+                       data = dat_onerow,
+                       family = bernoulli,
+                       control = list(adapt_delta = 0.99,
+                                      max_treedepth = 12),
+                       prior = c(prior(cauchy(0, 2), class = "sd"),
+                                 prior(normal(0, 1), class = "b")
+                       ),
+                       backend = "cmdstanr", threads = threading(2, static = TRUE), cores = 4,
+                       chains = 4
+)
+
+
+### Posterior checks ###
+
+# For variables moderately correlated, check for signs of ridges
+
+posterior <- as.array(mod1_urban_rural)
+
+color_scheme_set("pink")
+mcmc_pairs(posterior, pars = c("b_NDVI_mean_s", "b_avg_area_km_s", "b_annual_frequency_s", "b_autocorrelation_s", "b_severity_s"),
+           off_diag_args = list(size = 1.5)) # Looks good
+
+bayes_R2(mod1_urban_rural) # 0.3373059
+
+# Convert to odds ratios
+
+ests_mod1_urban_rural <- data.frame(exp(cbind(Odds_Ratio = fixef(mod1_urban_rural)[,1], Lower = fixef(mod1_urban_rural, probs = c(.05, .95))[,3], Upper = fixef(mod1_urban_rural, probs = c(.5, .95))[,4])))
+
+ests_mod1_urban_rural$parameters <- c("Intercept", "Spatial extent", "Severity", "Frequency", "Autocorrelation", "Dist. to pop. center", "Wealth", "Household size", "Migrant number", "Mean NDVI", "Spatial extent:Pop. center", "Severity:Pop. center", "Frequency:Pop. center", "Autocorrelation:Pop. center")
+
+### Caterpillar plot ###
+
+ests_mod1_urban_rural <- ests_mod1_urban_rural %>%
+  mutate(parameters = factor(parameters, levels = rev(ests_mod1_urban_rural$parameters))) %>%
+  filter(!(parameters %in% c("Migrant number"))) # Big odds ratio so makes other effects easier to see
+
+ggplot(ests_mod1_urban_rural, aes(x = parameters, y = Odds_Ratio)) +
+  geom_pointrange(aes(ymin = Lower, ymax = Upper), color = "blue") +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red") +
+  coord_flip() +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 15, face = "bold"),
+    axis.title.y = element_blank(),
+    axis.title.x = element_text(size = 15, face = "bold"),
+  ) +
+  labs(y = "Odds Ratio with 90% Credible Interval")
+
+
+### Examine two-way interactions ###
+
+## Severity
+
+means <- dat_onerow %>%
+  summarise(across(c(annual_frequency_s, autocorrelation_s, avg_area_km_s, wealth_index_s, hh_size_s, migrant_num_s, NDVI_mean_s), ~ mean(.x, na.rm = TRUE)),
+            .groups = "drop")
+
+# Get range of severity_s
+severity_s_seq <- seq(min(dat_onerow$severity_s, na.rm = TRUE), 5, length.out = 100) # Max severity is 5.71 but so far off the range of the other drought characteristics, just cut at 5 to avoid messiness on the plot (it literally plots off the edge)
+
+# Get range of pop_center_s
+pop_center_s_seq <- seq(min(dat_onerow$pop_center_s, na.rm = TRUE), max(dat_onerow$pop_center_s, na.rm = TRUE), length.out = 100) 
+
+# Create new data grid
+grid_base <- expand_grid(
+  pop_center_s = pop_center_s_seq,
+  severity_s = severity_s_seq
+)
+
+new_data <- grid_base %>%
+  bind_cols(means[rep(1, nrow(grid_base)), ])
+
+preds <- new_data %>%
+  add_epred_draws(mod1_urban_rural, re_formula = NA)  # remove REs for marginal/fixed predictions
+
+# Plot
+
+preds_summary <- preds %>%
+  group_by(severity_s, pop_center_s) %>%
+  summarise(
+    mean_epred = mean(.epred), #0.5308778 0.7084602
+    .lower = quantile(.epred, 0.05),
+    .upper = quantile(.epred, 0.95),
+    .groups = "drop"
+  )
+
+sev_plot <- ggplot(preds_summary, aes(x = severity_s, y = pop_center_s, fill = mean_epred)) +
+  geom_tile() +
+  scale_fill_viridis_c(option = "plasma", name = "Predicted\nprobability", limits = c(0, 1)) +
+  labs(
+    x = "Severity", 
+    y = "Distance to population center"
+    #title = "Predicted probability of remittance by drought extent and severity"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 15, face = "bold"),
+    axis.title.y = element_text(size = 15, face = "bold"),
+    axis.title.x = element_text(size = 15, face = "bold"),
+    legend.position = "none",
+    plot.margin = margin(t = 40, r = 10, b = 0, l = 10)
+  ) +
+  annotate("text", x = -2.2, y = 8.5, label = "A", size = 6, fontface = "bold") +
+  coord_cartesian(xlim = c(-2, 5), ylim = c(-1, 7.6), clip = "off")
+
+
+
+## Spatial extent
+
+means <- dat_onerow %>%
+  summarise(across(c(severity_s, annual_frequency_s, autocorrelation_s, wealth_index_s, hh_size_s, migrant_num_s, NDVI_mean_s), ~ mean(.x, na.rm = TRUE)),
+            .groups = "drop")
+
+# Get range of avg_area_km_s
+avg_area_km_s_seq <- seq(min(dat_onerow$avg_area_km_s, na.rm = TRUE), max(dat_onerow$avg_area_km_s, na.rm = TRUE), length.out = 100)
+
+# Get range of pop_center_s
+pop_center_s_seq <- seq(min(dat_onerow$pop_center_s, na.rm = TRUE), max(dat_onerow$pop_center_s, na.rm = TRUE), length.out = 100) 
+
+# Create new data grid
+grid_base <- expand_grid(
+  pop_center_s = pop_center_s_seq,
+  avg_area_km_s = avg_area_km_s_seq
+)
+
+new_data <- grid_base %>%
+  bind_cols(means[rep(1, nrow(grid_base)), ])
+
+preds <- new_data %>%
+  add_epred_draws(mod1_urban_rural, re_formula = NA)  # remove REs for marginal/fixed predictions
+
+# Plot
+
+preds_summary <- preds %>%
+  group_by(avg_area_km_s, pop_center_s) %>%
+  summarise(
+    mean_epred = mean(.epred), #0.3597103 0.7687198
+    .lower = quantile(.epred, 0.05),
+    .upper = quantile(.epred, 0.95),
+    .groups = "drop"
+  )
+
+spa_plot <- ggplot(preds_summary, aes(x = avg_area_km_s, y = pop_center_s, fill = mean_epred)) +
+  geom_tile() +
+  scale_fill_viridis_c(option = "plasma", name = "Predicted\nprobability", limits = c(0, 1)) +
+  labs(
+    x = "Spatial extent", 
+    y = "Distance to population center"
+    #title = "Predicted probability of remittance by drought extent and severity"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 15, face = "bold"),
+    axis.title.y = element_text(size = 15, face = "bold"),
+    axis.title.x = element_text(size = 15, face = "bold"),
+    legend.position = "right",
+    plot.margin = margin(t = 40, r = 10, b = 0, l = 10)
+  ) +
+  annotate("text", x = -2.2, y = 8.5, label = "D", size = 6, fontface = "bold") +
+  coord_cartesian(xlim = c(-2, 5), ylim = c(-1, 7.6), clip = "off")
+
+
+## Frequency
+
+means <- dat_onerow %>%
+  summarise(across(c(severity_s, autocorrelation_s, avg_area_km_s, wealth_index_s, hh_size_s, migrant_num_s, NDVI_mean_s), ~ mean(.x, na.rm = TRUE)),
+            .groups = "drop")
+
+# Get range of annual_frequency_s
+annual_frequency_s_seq <- seq(min(dat_onerow$annual_frequency_s, na.rm = TRUE), max(dat_onerow$annual_frequency_s, na.rm = TRUE), length.out = 100)
+
+# Get range of pop_center_s
+pop_center_s_seq <- seq(min(dat_onerow$pop_center_s, na.rm = TRUE), max(dat_onerow$pop_center_s, na.rm = TRUE), length.out = 100)
+
+# Create new data grid
+grid_base <- expand_grid(
+  pop_center_s = pop_center_s_seq,
+  annual_frequency_s = annual_frequency_s_seq
+)
+
+new_data <- grid_base %>%
+  bind_cols(means[rep(1, nrow(grid_base)), ])
+
+preds <- new_data %>%
+  add_epred_draws(mod1_urban_rural, re_formula = NA)  # remove REs for marginal/fixed predictions
+
+# Plot
+
+preds_summary <- preds %>%
+  group_by(annual_frequency_s, pop_center_s) %>%
+  summarise(
+    mean_epred = mean(.epred),
+    .lower = quantile(.epred, 0.05),
+    .upper = quantile(.epred, 0.95),
+    .groups = "drop"
+  ) #0.5111088 0.7549580
+
+freq_plot <- ggplot(preds_summary, aes(x = annual_frequency_s, y = pop_center_s, fill = mean_epred)) +
+  geom_tile() +
+  scale_fill_viridis_c(option = "plasma", name = "Predicted\nprobability", limits = c(0, 1)) +
+  labs(
+    x = "Frequency", 
+    y = "Distance to population center"
+    #title = "Predicted probability of remittance by drought extent and severity"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 15, face = "bold"),
+    axis.title.y = element_text(size = 15, face = "bold"),
+    axis.title.x = element_text(size = 15, face = "bold"),
+    legend.position = "none",
+    plot.margin = margin(t = 40, r = 10, b = 0, l = 10)
+  ) +
+  annotate("text", x = -2.2, y = 8.5, label = "B", size = 6, fontface = "bold") +
+  coord_cartesian(xlim = c(-2, 5), ylim = c(-1, 7.6), clip = "off")
+
+
+
+## Autocorrelation
+
+means <- dat_onerow %>%
+  summarise(across(c(severity_s, annual_frequency_s, avg_area_km_s, wealth_index_s, hh_size_s, migrant_num_s, NDVI_mean_s), ~ mean(.x, na.rm = TRUE)),
+            .groups = "drop")
+
+# Get range of autocorrelation_s
+autocorrelation_s_seq <- seq(min(dat_onerow$autocorrelation_s, na.rm = TRUE), max(dat_onerow$autocorrelation_s, na.rm = TRUE), length.out = 100)
+
+# Get range of pop_center_s
+pop_center_s_seq <- seq(min(dat_onerow$pop_center_s, na.rm = TRUE), max(dat_onerow$pop_center_s, na.rm = TRUE), length.out = 100)
+
+# Create new data grid
+grid_base <- expand_grid(
+  pop_center_s = pop_center_s_seq,
+  autocorrelation_s = autocorrelation_s_seq
+)
+
+new_data <- grid_base %>%
+  bind_cols(means[rep(1, nrow(grid_base)), ])
+
+preds <- new_data %>%
+  add_epred_draws(mod1_urban_rural, re_formula = NA)  # remove REs for marginal/fixed predictions
+
+# Plot
+
+preds_summary <- preds %>%
+  group_by(autocorrelation_s, pop_center_s) %>%
+  summarise(
+    mean_epred = mean(.epred), # 0.2034925 0.8531646
+    .lower = quantile(.epred, 0.05),
+    .upper = quantile(.epred, 0.95),
+    .groups = "drop"
+  )
+
+auto_plot <- ggplot(preds_summary, aes(x = autocorrelation_s, y = pop_center_s, fill = mean_epred)) +
+  geom_tile() +
+  scale_fill_viridis_c(option = "plasma", name = "Predicted\nprobability", limits = c(0, 1)) +
+  labs(
+    x = "Temporal autocorrelation", 
+    y = "Distance to population center"
+    #title = "Predicted probability of remittance by drought extent and severity"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 15, face = "bold"),
+    axis.title.y = element_text(size = 15, face = "bold"),
+    axis.title.x = element_text(size = 15, face = "bold"),
+    legend.position = "none",
+    plot.margin = margin(t = 40, r = 10, b = 0, l = 10)
+  ) +
+  annotate("text", x = -2.2, y = 8.5, label = "C", size = 6, fontface = "bold") +
+  coord_cartesian(xlim = c(-2, 5), ylim = c(-1, 7.6), clip = "off")
+
+
+## Save
+
+combined_plot <- (sev_plot + freq_plot) /
+  (auto_plot + spa_plot) +
+  plot_layout(guides = "collect")
+
+ggsave("facet_plot_urban_rural.pdf", combined_plot, width = 10, height = 8)
