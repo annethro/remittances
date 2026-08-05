@@ -1,6 +1,6 @@
 "Monetary transfers may be related to patterning in climate events, not just single extreme events"
 Anne Pisor, Danielle Touma, J. Hope Guin, James Holland Jones
-In press, Climatic Change, https://doi.org/10.1007/s10584-026-04249-7
+Climatic Change (2026) 179, 158. https://link.springer.com/article/10.1007/s10584-026-04249-7
 
 Data and code maintained by Anne Pisor and Danielle Touma
 
